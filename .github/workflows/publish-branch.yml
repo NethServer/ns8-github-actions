@@ -1,0 +1,39 @@
+name: "Publish images"
+
+on:
+  workflow_call:
+
+permissions:
+  packages: write
+
+jobs:
+  publish_images:
+    env:
+      IMAGETAG: ${{ github.ref_name }}
+      REPOBASE: ghcr.io/${{ github.repository_owner }}
+    name: 'Publish module images'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/cache@v2
+        with:
+          path: ui/node_modules
+          key: "yarn-${{ hashFiles('ui/yarn.lock') }}"
+      - id: build
+        run: |
+          # Build the module images
+          REPOBASE=${REPOBASE,,}
+          export REPOBASE
+          bash build-images.sh
+      - id: publish
+        run: |
+          # Publish the branch
+          trap 'buildah logout ghcr.io' EXIT
+          buildah login -u ${{ github.actor }} --password-stdin ghcr.io <<<"${{ secrets.GITHUB_TOKEN }}"
+          images=(${{ steps.build.outputs.images }})
+          urls=""
+          for image in "${images[@]}" ; do
+            buildah push $image docker://${image}:${IMAGETAG:?}
+            urls="${image}:${IMAGETAG} "$'\n'"${urls}"
+          done
+          echo "::notice title=Image URLs::${urls}"

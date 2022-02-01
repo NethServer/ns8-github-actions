@@ -1,0 +1,32 @@
+name: "Build API docs"
+description: "Translate JSON Schema docs to Markdown format"
+runs:
+  using: composite
+  steps:
+    - id: yarn-cache
+      uses: actions/cache@v2
+      with:
+        path: .npm-cache
+        key: "npm-apidoc-${{ github.ref }}"
+    - id: schemadocs
+      name: "Build JSON Schema docs"
+      shell: bash
+      run: |
+        # Build JSON Schema docs
+        mkdir -p .npm-cache
+        buildah from --name schemadocs \
+          -v "${GITHUB_ACTION_PATH}:/srv/src:Z" \
+          -v "${PWD}/.npm-cache:/srv/npm-cache:Z" \
+          -v "${PWD}:/usr/src:Z" docker.io/library/node:slim
+        buildah run schemadocs sh <<'EOF'
+        set -e
+        npm config set cache /srv/npm-cache
+        npm install -g @adobe/jsonschema2md
+        cd /usr/src
+        rm -rf .apidoc/{dst,src}
+        SRCDIR=.apidoc/src/
+        DSTDIR=.apidoc/dst/
+        mkdir -vp ${SRCDIR}
+        find imageroot -name validate-input.json -o -name validate-output.json -o -name validator-definitions.json | node /srv/src/id-rename.js ${SRCDIR}
+        jsonschema2md -d ${SRCDIR} -o ${DSTDIR} -x ${DSTDIR} -e json
+        EOF

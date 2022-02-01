@@ -1,0 +1,29 @@
+name: "Build API JSON Schema docs"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-apidocs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: "Build the docs"
+        uses: NethServer/ns8-github-actions/.github/actions/build-apidoc@main
+
+      - name: "Publish the docs"
+        run: |
+          # Push the API documents
+          git config user.name nethbot
+          git config user.email nethbot@nethesis.it
+          git add .apidoc/dst
+          TREE=$(git write-tree --prefix=.apidoc/dst)
+          REMOTE_BRANCH="apidoc-${{ github.ref_name }}"
+          COMMIT=$(git commit-tree -m "${REMOTE_BRANCH}" ${TREE})
+          git push -f origin $COMMIT:refs/heads/${REMOTE_BRANCH}
+          echo "::notice title=API documentation is available at URL::https://github.com/${{ github.repository }}/tree/${REMOTE_BRANCH}"
+

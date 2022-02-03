@@ -33,6 +33,9 @@ jobs:
           urls=""
           for image in "${images[@]}" ; do
             buildah push $image docker://${image}:${GITHUB_REF_NAME:?}
+            if [[ "${GITHUB_REF_NAME}" == "main" || "${GITHUB_REF_NAME}" == "master" ]]; then
+                buildah push $image docker://${image}:latest
+            fi
             urls="${image}:${GITHUB_REF_NAME} "$'\n'"${urls}"
           done
           echo "::notice title=Image URLs::${urls}"

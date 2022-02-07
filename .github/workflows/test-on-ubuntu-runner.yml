@@ -1,0 +1,53 @@
+name: "Setup NS8 cluster and test module"
+
+on:
+  workflow_call:
+    inputs:
+      script:
+        required: false
+        type: string
+        default: test-module.sh
+      path:
+        required: false
+        type: string
+      args:
+        required: false
+        type: string
+      repo_ref:
+        required: false
+        type: string
+        default: ${{ github.sha }}
+
+jobs:
+  test-module:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v2.3.1
+        with:
+          python-version: 3.9
+      - name: Checkout
+        uses: actions/checkout@v2.4.0
+        with:
+            ref: ${{ inputs.repo_ref }}
+      - name: Setup SSH Keys
+        run: |
+          set -e -x
+          mkdir ~/.ssh
+          ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa
+          sudo bash -c "cat /home/runner/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys"
+      - name: Setup NS8 Cluster
+        run: |
+          set -e -x
+          curl https://raw.githubusercontent.com/NethServer/ns8-core/main/core/install.sh | sudo -E PATH=$PATH HOME=/root bash
+          sudo create-cluster $(hostname -f):55820 10.5.4.0/24 Nethesis,1234
+      - name: Execute the tests
+        run: ./${{ inputs.script }} $(hostname -f) ${{ inputs.args }}
+        working-directory: ${{ github.workspace }}/${{ inputs.path }}
+      - name: Save the tests results
+        if: always()
+        uses: actions/upload-artifact@v2
+        with:
+          name: tests-logs
+          path: |
+             ${{ github.workspace }}/${{ inputs.path }}/tests/outputs/

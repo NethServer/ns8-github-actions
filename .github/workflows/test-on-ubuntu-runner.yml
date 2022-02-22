@@ -17,6 +17,10 @@ on:
         required: false
         type: string
         default: ${{ github.sha }}
+      debug_shell:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   test-module:
@@ -51,3 +55,6 @@ jobs:
           name: tests-logs
           path: |
              ${{ github.workspace }}/${{ inputs.path }}/tests/outputs/
+      - name: Debugging with tmate
+        if: ${{ inputs.debug_shell == true && ! cancelled() && always() }}
+        uses: mxschmitt/action-tmate@v3.1

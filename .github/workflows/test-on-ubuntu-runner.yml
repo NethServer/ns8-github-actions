@@ -21,6 +21,14 @@ on:
         required: false
         type: boolean
         default: false
+      coremodules:
+        required: false
+        type: string
+        default: ""
+      corebranch:
+        required: false
+        type: string
+        default: main
 
 jobs:
   test-module:
@@ -42,8 +50,9 @@ jobs:
           sudo bash -c "cat /home/runner/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys"
       - name: Setup NS8 Cluster
         run: |
-          set -e -x
-          curl https://raw.githubusercontent.com/NethServer/ns8-core/main/core/install.sh | sudo -E PATH=$PATH HOME=/root bash
+          set -x
+          curl -O https://raw.githubusercontent.com/NethServer/ns8-core/${{ inputs.corebranch }}/core/install.sh
+          sudo -E PATH=$PATH HOME=/root bash install.sh ${{ inputs.coremodules }}
           sudo create-cluster $(hostname -f):55820 10.5.4.0/24 Nethesis,1234
       - name: Execute the tests
         run: ./${{ inputs.script }} $(hostname -f) ${{ inputs.args }}

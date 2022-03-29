@@ -29,6 +29,10 @@ on:
         required: false
         type: string
         default: main
+      setup_cluster:
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   test-module:
@@ -49,6 +53,7 @@ jobs:
           ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa
           sudo bash -c "cat /home/runner/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys"
       - name: Setup NS8 Cluster
+        if: inputs.setup_cluster
         run: |
           set -x
           curl -O https://raw.githubusercontent.com/NethServer/ns8-core/${{ inputs.corebranch }}/core/install.sh

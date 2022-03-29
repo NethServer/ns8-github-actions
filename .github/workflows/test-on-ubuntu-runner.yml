@@ -62,6 +62,8 @@ jobs:
       - name: Execute the tests
         run: ./${{ inputs.script }} $(hostname -f) ${{ inputs.args }}
         working-directory: ${{ github.workspace }}/${{ inputs.path }}
+        env:
+          COREMODULES: ${{ inputs.coremodules }}
       - name: Save the tests results
         if: always()
         uses: actions/upload-artifact@v2

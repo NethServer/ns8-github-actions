@@ -10,6 +10,9 @@ jobs:
   publish_images:
     name: 'Publish module images'
     runs-on: ubuntu-latest
+    env:
+      REPOBASE: ghcr.io/${{ github.repository_owner }}
+      IMAGETAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v2
       - uses: actions/cache@v2
@@ -17,8 +20,6 @@ jobs:
           path: ui/node_modules
           key: "yarn-${{ hashFiles('ui/yarn.lock') }}"
       - id: build
-        env:
-          REPOBASE: ghcr.io/${{ github.repository_owner }}
         run: |
           # Build the module images
           REPOBASE=${REPOBASE,,}
@@ -32,10 +33,10 @@ jobs:
           images=(${{ steps.build.outputs.images }})
           urls=""
           for image in "${images[@]}" ; do
-            buildah push $image docker://${image}:${GITHUB_REF_NAME:?}
-            if [[ "${GITHUB_REF_NAME}" == "main" || "${GITHUB_REF_NAME}" == "master" ]]; then
+            buildah push $image docker://${image}:${IMAGETAG:?}
+            if [[ "${IMAGETAG}" == "main" || "${IMAGETAG}" == "master" ]]; then
                 buildah push $image docker://${image}:latest
             fi
-            urls="${image}:${GITHUB_REF_NAME} "$'\n'"${urls}"
+            urls="${image}:${IMAGETAG} "$'\n'"${urls}"
           done
           echo "::notice title=Image URLs::${urls}"

@@ -132,8 +132,8 @@ jobs:
           root@${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} << EOF
             set -e -x
             curl -O https://raw.githubusercontent.com/NethServer/ns8-core/${{ inputs.corebranch }}/core/install.sh
-            sudo -E PATH=$PATH HOME=/root bash install.sh ${{ inputs.coremodules }}
-            sudo create-cluster $(hostname -f):55820 10.5.4.0/24 Nethesis,1234
+            bash install.sh ${{ inputs.coremodules }}
+            create-cluster $(hostname -f):55820 10.5.4.0/24 Nethesis,1234
           EOF
       - name: "Run tests"
         run: |

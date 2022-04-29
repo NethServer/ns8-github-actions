@@ -140,7 +140,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no -o GlobalKnownHostsFile=/dev/null -i ${{ github.workspace }}/key \
           root@${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} << EOF
             set -e -x
-            create-cluster $(hostname -f):55820 10.5.4.0/24 Nethesis,1234
+            create-cluster ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }}:55820 10.5.4.0/24 Nethesis,1234
           EOF
       - name: "Run tests"
         run: |

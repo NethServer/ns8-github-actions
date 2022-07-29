@@ -125,6 +125,11 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: "Wait for boot to complete"
+        run: |
+          ssh -o StrictHostKeyChecking=no -o GlobalKnownHostsFile=/dev/null -i ${{ github.workspace }}/key \
+            root@${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} \
+            'systemctl is-system-running --wait || : '
       - name: "Install NS8 system"
         if: inputs.setup_cluster
         run: |

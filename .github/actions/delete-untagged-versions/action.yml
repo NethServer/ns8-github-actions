@@ -1,0 +1,21 @@
+name: "Delete untagged image from ghcr.io"
+inputs:
+  images:
+    required: true
+  delete_image_token:
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        # Deleting images with no tag
+        gh auth login --with-token <<<"${{ inputs.delete_image_token }}"
+        for image in ${{ inputs.images }} ; do
+          versions_path="${{ github.event.organization.url || github.event.repository.owner.url }}/packages/container/${image}/versions"
+          version_id=$(gh api --paginate -q ".[] | select(.metadata.container.tags == []) | .id" ${versions_path})
+          if [[ -n ${version_id}} ]]; then
+            gh api --input /dev/null -X DELETE ${versions_path}/${version_id}
+            echo "::notice::DELETE ${versions_path}/${version_id}"
+          fi
+        done

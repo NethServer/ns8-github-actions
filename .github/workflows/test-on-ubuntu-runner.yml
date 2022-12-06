@@ -48,12 +48,13 @@ jobs:
           mkdir ~/.ssh
           ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa
           sudo bash -c "cat /home/runner/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys"
-      - name: Setup NS8 Cluster
+      - name: Install NS8 system
         run: |
           set -x
           curl -O https://raw.githubusercontent.com/NethServer/ns8-core/${{ inputs.corebranch }}/core/install.sh
           sudo -E PATH=$PATH HOME=/root bash install.sh ${{ inputs.coremodules }}
-          sudo create-cluster $(hostname -f):55820 10.5.4.0/24 Nethesis,1234
+      - name: Create NS8 Cluster
+        run: sudo create-cluster $(hostname -f):55820 10.5.4.0/24 Nethesis,1234
       - name: Execute the tests
         run: ./${{ inputs.script }} $(hostname -f) ${{ inputs.args }}
         working-directory: ${{ github.workspace }}/${{ inputs.path }}

@@ -43,7 +43,7 @@ on:
       leader_nodes:
         required: false
         type: string
-        default: "cs1 dn1"
+        default: "cs1 dn1 rl1"
         description: "List of space-separated leader nodes to create"
       do_project:
         required: false
@@ -117,7 +117,7 @@ jobs:
         working-directory: ${{ github.workspace }}/infra
       - name: "Wait for SSH server do be READY"
         run: |
-          for (( n=1; c<=20; c++ )); do
+          for (( c=1; c<=20; c++ )); do
           set +e
             ssh -o StrictHostKeyChecking=no -o GlobalKnownHostsFile=/dev/null -i ${{ github.workspace }}/key \
               root@${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} true
@@ -125,15 +125,27 @@ jobs:
             sleep 1
           done
           exit 1
-      - name: "Setup NS8 Cluster"
+      - name: "Wait for boot to complete"
+        run: |
+          ssh -o StrictHostKeyChecking=no -o GlobalKnownHostsFile=/dev/null -i ${{ github.workspace }}/key \
+            root@${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} \
+            'systemctl is-system-running --wait || : '
+      - name: "Install NS8 system"
         if: inputs.setup_cluster
         run: |
           ssh -o StrictHostKeyChecking=no -o GlobalKnownHostsFile=/dev/null -i ${{ github.workspace }}/key \
           root@${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} << EOF
             set -e -x
             curl -O https://raw.githubusercontent.com/NethServer/ns8-core/${{ inputs.corebranch }}/core/install.sh
-            sudo -E PATH=$PATH HOME=/root bash install.sh ${{ inputs.coremodules }}
-            sudo create-cluster $(hostname -f):55820 10.5.4.0/24 Nethesis,1234
+            bash install.sh ${{ inputs.coremodules }}
+          EOF
+      - name: "Create NS8 Cluster"
+        if: inputs.setup_cluster
+        run: |
+          ssh -o StrictHostKeyChecking=no -o GlobalKnownHostsFile=/dev/null -i ${{ github.workspace }}/key \
+          root@${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} << EOF
+            set -e -x
+            create-cluster ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }}:55820 10.5.4.0/24 Nethesis,1234
           EOF
       - name: "Run tests"
         run: |

@@ -43,7 +43,7 @@ on:
       leader_nodes:
         required: false
         type: string
-        default: "cs1 dn1 rl1"
+        default: "al cs1 dn1 rl1"
         description: "List of space-separated leader nodes to create"
       do_project:
         required: false

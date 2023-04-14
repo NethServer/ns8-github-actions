@@ -75,10 +75,10 @@ jobs:
         id: nodes
         run: |
           nodes=$(jq -ncR '[inputs]' <<< "$(echo ${{ inputs.leader_nodes }} | tr ' ' '\n')")
-          echo "::set-output name=list::${nodes}"
+          echo "list=${nodes}" >> $GITHUB_OUTPUT
       - name: "Get the short sha of the current commit"
         id: short_sha
-        run: echo "::set-output name=value::$( echo ${{ inputs.repo_ref }} | cut -c1-8 )"
+        run: echo "value=$( echo ${{ inputs.repo_ref }} | cut -c1-8 )" >> $GITHUB_OUTPUT
   test-module:
     name: "Test on DigitalOcean"
     runs-on: ubuntu-latest

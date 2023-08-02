@@ -33,8 +33,8 @@ on:
       corebranch:
         required: false
         type: string
-        default: main
-        description: "Branch of the `ns8-core` repository from where get the installation script"
+        default: ns8-stable
+        description: "Branch/tag of the `ns8-core` repository from where to get the installation script"
       setup_cluster:
         required: false
         type: boolean

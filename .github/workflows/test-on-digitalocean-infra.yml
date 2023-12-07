@@ -63,6 +63,10 @@ env:
   TF_VAR_project: ${{ inputs.do_project }}
   TF_VAR_domain: ${{ inputs.do_domain }}
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
 jobs:
   info:
     name: "Find NS8 cluster informations"

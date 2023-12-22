@@ -63,9 +63,6 @@ env:
   TF_VAR_project: ${{ inputs.do_project }}
   TF_VAR_domain: ${{ inputs.do_domain }}
 
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: true
 
 jobs:
   info:
@@ -84,6 +81,9 @@ jobs:
         id: short_sha
         run: echo "value=$( echo ${{ inputs.repo_ref }} | cut -c1-8 )" >> $GITHUB_OUTPUT
   test-module:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref_name }}-${{ matrix.node }}
+      cancel-in-progress: true
     name: "Test on DigitalOcean"
     runs-on: ubuntu-latest
     needs: info

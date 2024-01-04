@@ -102,6 +102,7 @@ jobs:
         with:
           repository: NethServer/ns8-terraform-infra
           path: infra
+      - run: sleep 60s
       - name: "HashiCorp - Setup Terraform"
         id: tf_setup
         uses: hashicorp/setup-terraform@v2
@@ -112,7 +113,6 @@ jobs:
         env:
           TF_VAR_do_token: ${{ secrets.do_token }}
         run: |
-          sleep 60s
           terraform init
           terraform workspace new ${{ matrix.node }}-${{ needs.info.outputs.short_sha }}
           terraform apply -var 'leader_node={"${{ matrix.node }}":"ams3"}' -auto-approve

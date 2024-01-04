@@ -112,6 +112,7 @@ jobs:
           TF_VAR_do_token: ${{ secrets.do_token }}
         run: |
           sleep 60s
+          echo "${{ success() }}"
           terraform init
           terraform workspace new ${{ matrix.node }}-${{ needs.info.outputs.short_sha }}
           terraform apply -var 'leader_node={"${{ matrix.node }}":"ams3"}' -auto-approve

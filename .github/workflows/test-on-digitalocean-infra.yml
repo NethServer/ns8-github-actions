@@ -109,10 +109,11 @@ jobs:
         with:
           terraform_wrapper: false
       - name: "HashiCorp - Terraform Apply"
-        if: ${{ steps.tf_setup.outcome == 'success' && always() }}
+        if: ${{ ! failure() && ! cancelled()  && always() }}
         env:
           TF_VAR_do_token: ${{ secrets.do_token }}
         run: |
+          sleep 60s
           terraform init
           terraform workspace new ${{ matrix.node }}-${{ needs.info.outputs.short_sha }}
           terraform apply -var 'leader_node={"${{ matrix.node }}":"ams3"}' -auto-approve

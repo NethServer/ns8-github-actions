@@ -107,7 +107,7 @@ jobs:
         with:
           terraform_wrapper: false
       - name: "HashiCorp - Terraform Apply"
-        if: ${{ success() && always() }}
+        if: ${{ always() }}
         env:
           TF_VAR_do_token: ${{ secrets.do_token }}
         run: |

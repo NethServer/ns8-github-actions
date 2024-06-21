@@ -17,6 +17,8 @@ jobs:
     env:
       REPOBASE: ghcr.io/${{ github.repository_owner }}
       IMAGETAG: ${{ github.ref_name }}
+    outputs:
+      images_digest_json: ${{ env.IMAGES_DIGEST_JSON }} 
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,3 +48,21 @@ jobs:
             urls="${image}:${IMAGETAG} "$'\n'"${urls}"
           done
           echo "::notice title=Image URLs::${urls}"
+      - id: digests
+        run: |
+          images=(${{ steps.build.outputs.images }})
+          images_urls=$(echo -n $images | jq -cr -R -s --arg tag "$IMAGETAG" 'split(" ") | map(. + ":" + $tag)')
+          jq_filter='[.[] | select(.names != null and (.names | any(. == $names[]))) | {name: (.names[] | sub(":[^:]+$"; "")), digest}]'
+          images_digest_json=$(buildah images --json | jq -rc --argjson names "$images_urls" "$jq_filter")
+          echo IMAGES_DIGEST_JSON=$images_digest_json" >> >> $GITHUB_ENV
+  gh_attestations:
+    needs: publish_images
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: ${{ fromJson(needs.publish_images.outputs.images_digest_json) }}
+    steps:
+      - name: Display image details
+        run: |
+          echo "Processing image: ${{ matrix.image.name }}"
+          echo "Digest: ${{ matrix.image.digest }}"

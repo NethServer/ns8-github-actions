@@ -50,7 +50,7 @@ jobs:
           echo "::notice title=Image URLs::${urls}"
       - id: digests
         run: |
-          images=(${{ steps.build.outputs.images }})
+          images="${{ steps.build.outputs.images }}"
           images_urls=$(echo -n $images | jq -cr -R -s --arg tag "$IMAGETAG" 'split(" ") | map(. + ":" + $tag)')
           jq_filter='[.[] | select(.names != null and (.names | any(. == $names[]))) | {name: (.names[] | sub(":[^:]+$"; "")), digest}]'
           images_digest_json=$(buildah images --json | jq -rc --argjson names "$images_urls" "$jq_filter")

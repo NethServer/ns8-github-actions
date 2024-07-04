@@ -33,8 +33,8 @@ on:
       corebranch:
         required: false
         type: string
-        default: main
-        description: "Branch of the `ns8-core` repository from where get the installation script"
+        default: ns8-stable
+        description: "Branch/tag of the `ns8-core` repository from where to get the installation script"
       setup_cluster:
         required: false
         type: boolean
@@ -43,7 +43,7 @@ on:
       leader_nodes:
         required: false
         type: string
-        default: "al1 cs1 dn1 rl1"
+        default: "cs1 dn1 rl1"
         description: "List of space-separated leader nodes to create"
       do_project:
         required: false
@@ -62,6 +62,10 @@ on:
 env:
   TF_VAR_project: ${{ inputs.do_project }}
   TF_VAR_domain: ${{ inputs.do_domain }}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
 
 jobs:
   info:
@@ -99,7 +103,7 @@ jobs:
           repository: NethServer/ns8-terraform-infra
           path: infra
       - name: "HashiCorp - Setup Terraform"
-        uses: hashicorp/setup-terraform@v1.2.1
+        uses: hashicorp/setup-terraform@v2
         with:
           terraform_wrapper: false
       - name: "HashiCorp - Terraform Apply"
@@ -156,14 +160,14 @@ jobs:
           COREMODULES: ${{ inputs.coremodules }}
       - name: "Save tests results"
         if: always()
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: tests-logs-${{ matrix.node }}
           path: |
              ${{ github.workspace }}/module/${{ inputs.path }}/tests/outputs/
       - name: "Debugging with tmate"
         if: ${{ inputs.debug_shell == true && ! cancelled() && always() }}
-        uses: mxschmitt/action-tmate@v3.1
+        uses: mxschmitt/action-tmate@v3
       - name: "HashiCorp - Terraform Destroy"
         if: ${{ always() }}
         env:

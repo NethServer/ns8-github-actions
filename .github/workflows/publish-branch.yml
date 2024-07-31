@@ -8,6 +8,10 @@ on:
         required: false
         default: 'ubuntu-latest'
         type: string
+    secrets:
+      netrcb64:
+        description: "Netrc Base64-encoded file content for authenticated downloads. Overrides netrc secret."
+        required: false
 
 permissions:
   packages: write
@@ -33,6 +37,8 @@ jobs:
           key: "yarn-${{ hashFiles('ui/yarn.lock') }}"
       - id: build
         run: |
+          # Write .netrc file with the secret contents:
+          ( umask 077 ; base64 -d <<<"${{ secrets.netrcb64 }}" >~/.netrc || : ; )
           # Build the module images
           REPOBASE=${REPOBASE,,}
           export REPOBASE

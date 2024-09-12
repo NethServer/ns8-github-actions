@@ -101,7 +101,7 @@ jobs:
             gh run view ${{ github.run_id }} \
             --repo ${{ github.repository }} \
             --json jobs \
-            --jq '.jobs[] | select(.name == "run_tests / Test on DigitalOcean (${{ matrix.node }})").url'
+            --jq '.jobs[] | select(.name | contains("/ Test on DigitalOcean (${{ matrix.node }})")).url'
           )
           gh api \
             --method POST \
@@ -196,7 +196,7 @@ jobs:
             gh run view ${{ github.run_id }} \
             --repo ${{ github.repository }} \
             --json jobs \
-            --jq '.jobs[] | select(.name == "run_tests / Test on DigitalOcean (${{ matrix.node }})").url'
+            --jq '.jobs[] | select(.name | contains("/ Test on DigitalOcean (${{ matrix.node }})")).url'
           )
 
           if [ "${{ steps.run_tests.outcome }}" == "success" ]; then

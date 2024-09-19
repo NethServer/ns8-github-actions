@@ -92,6 +92,26 @@ jobs:
       matrix:
           node: ${{ fromJSON(needs.info.outputs.nodes) }}
     steps:
+      - id: create_status
+        name: "Create commit status"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status_page=$(
+            gh run view ${{ github.run_id }} \
+            --repo ${{ github.repository }} \
+            --json jobs \
+            --jq '.jobs[] | select(.name | contains("/ Test on DigitalOcean (${{ matrix.node }})")).url'
+          )
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            /repos/${{ github.repository }}/statuses/${{ github.event.workflow_run.head_sha || github.sha}} \
+            -f "state=pending" \
+            -f "target_url=$status_page" \
+            -f "description=Test on DigitalOcean (${{ matrix.node }})" \
+            -f "context=continuous-integration/robotframework/${{ matrix.node }})"
       - name: "Checkout the module repository"
         uses: actions/checkout@v3
         with:
@@ -152,6 +172,7 @@ jobs:
             create-cluster ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }}:55820 10.5.4.0/24 Nethesis,1234
           EOF
       - name: "Run tests"
+        id: run_tests
         run: |
           ./${{ inputs.script }} ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} ${{ inputs.args }}
         working-directory: ${{ github.workspace }}/module/${{ inputs.path }}
@@ -165,6 +186,38 @@ jobs:
           name: tests-logs-${{ matrix.node }}
           path: |
              ${{ github.workspace }}/module/${{ inputs.path }}/tests/outputs/
+      - id: update-status
+        name: "Update commit status"
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status_page=$(
+            gh run view ${{ github.run_id }} \
+            --repo ${{ github.repository }} \
+            --json jobs \
+            --jq '.jobs[] | select(.name | contains("/ Test on DigitalOcean (${{ matrix.node }})")).url'
+          )
+
+          if [ "${{ steps.run_tests.outcome }}" == "success" ]; then
+            state="success"
+          elif [ "${{ steps.run_tests.outcome }}" == "failure" ]; then
+            state="failure"
+          elif [ "${{ job.status }}" == "failure" ]; then
+            state="error"
+          else
+            state="pending"
+          fi
+
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            /repos/${{ github.repository }}/statuses/${{ github.event.workflow_run.head_sha || github.sha}} \
+            -f "state=$state" \
+            -f "target_url=$status_page" \
+            -f "description=Test on DigitalOcean (${{ matrix.node }})" \
+            -f "context=continuous-integration/robotframework/${{ matrix.node }})"
       - name: "Debugging with tmate"
         if: ${{ inputs.debug_shell == true && ! cancelled() && always() }}
         uses: mxschmitt/action-tmate@v3

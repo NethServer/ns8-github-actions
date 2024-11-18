@@ -1,0 +1,32 @@
+name: "Analyze images with Trivy"
+
+on:
+  workflow_call:
+    inputs:
+      images:
+        description: "List of images to analyze"
+        required: true
+        type: string
+
+permissions:
+  security-events: write
+
+jobs:
+  trivy:
+    name: "Run Trivy vulnerability scanner"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(inputs.images) }}
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.image }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'

@@ -37,6 +37,14 @@ jobs:
           key: "yarn-${{ hashFiles('ui/yarn.lock') }}"
       - id: build
         run: |
+          # Try NethServer mirrors before going to docker.io to avoid rate-limits
+          mkdir -vp /etc/containers/registries.conf.d
+          cat - >/etc/containers/registries.conf.d/800-nethserver.conf <<'EOF'
+          [[registry]]
+          location = "docker.io"
+          [[registry.mirror]]
+          location = "ghcr.io/nethserver/docker.io"
+          EOF
           # Write .netrc file with the secret contents:
           ( umask 077 ; base64 -d <<<"${{ secrets.netrcb64 }}" >~/.netrc || : ; )
           # Build the module images

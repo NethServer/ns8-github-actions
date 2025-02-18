@@ -10,10 +10,10 @@ jobs:
   publish-apidocs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: "Build the docs"
-        uses: NethServer/ns8-github-actions/.github/actions/build-apidoc@main
+        uses: NethServer/ns8-github-actions/.github/actions/build-apidoc@v1
 
       - name: "Publish the docs"
         run: |

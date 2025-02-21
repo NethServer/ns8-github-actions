@@ -1,0 +1,48 @@
+name: "Analyze module with Syft and Grype"
+
+on:
+  workflow_call:
+    inputs:
+      images:
+        description: "List of images to analyze"
+        required: true
+        type: string
+      vulnerability_scan:
+        description: "Run vulnerability scan"
+        type: boolean
+        default: true
+
+permissions:
+  actions: read
+  contents: write
+  security-events: write
+
+jobs:
+  scan:
+    name: "Run Syft and Grype vulnerability scanners"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(inputs.images) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate SBOM with Syft
+        id: sbom
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ matrix.image }}
+          output-file: sbom.spdx.json
+          dependency-snapshot: true
+      - name: Run Grype vulnerability scanner
+        if: ${{ inputs.vulnerability_scan == true }}
+        id: scan
+        uses: anchore/scan-action@v6
+        with:
+          sbom: sbom.spdx.json
+          fail-build: false
+      - name: Upload Grype scan results
+        if: ${{ inputs.vulnerability_scan == true }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}

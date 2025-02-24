@@ -7,6 +7,14 @@ on:
         description: "List of images to analyze"
         required: true
         type: string
+      scan_module_ui:
+        description: "Scan module UI"
+        type: boolean
+        default: true
+      scan_module_imageroot:
+        description: "Scan module imageroot"
+        type: boolean
+        default: true
       vulnerability_scan:
         description: "Run vulnerability scan"
         type: boolean
@@ -18,7 +26,43 @@ permissions:
   security-events: write
 
 jobs:
-  scan:
+  scan_ui_imageroot:
+    name: "Scan module UI and imageroot"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "ui"
+            path: ./ui
+            scan_enabled: ${{ inputs.scan_module_ui }}
+          - name: "imageroot"
+            path: ./imageroot
+            scan_enabled: ${{ inputs.scan_module_imageroot }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate SBOM with Syft
+        id: sbom
+        if: ${{ matrix.scan_enabled == true}}
+        uses: anchore/sbom-action@v0
+        with:
+          path: ${{ matrix.path }}
+          artifact-name: ${{ github.repository_owner }}_${{ github.event.repository.name }}_${{ matrix.name }}_${{ github.ref_name }}.spdx.json
+          output-file: sbom.spdx.json
+          dependency-snapshot: true
+      - name: Run Grype vulnerability scanner
+        id: scan
+        if: ${{ matrix.scan_enabled == true && inputs.vulnerability_scan == true }}
+        uses: anchore/scan-action@v6
+        with:
+          sbom: sbom.spdx.json
+          fail-build: false
+      - name: Upload Grype scan results
+        if: ${{ matrix.scan_enabled == true && inputs.vulnerability_scan == true }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+  scan_images:
     name: "Run Syft and Grype vulnerability scanners"
     runs-on: ubuntu-latest
     strategy:

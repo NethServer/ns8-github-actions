@@ -7,6 +7,14 @@ on:
         description: "List of images to analyze"
         required: true
         type: string
+      scan_module_ui:
+        description: "Scan module UI"
+        type: boolean
+        default: true
+      scan_module_imageroot:
+        description: "Scan module imageroot"
+        type: boolean
+        default: true
       generate_sbom:
         description: "Generate SBOM"
         type: boolean
@@ -29,6 +37,59 @@ permissions:
   security-events: write
 
 jobs:
+  scan_ui_imageroot:
+    name: "Scan module UI and imageroot"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "ui"
+            path: ./ui
+            scan_enabled: ${{ inputs.scan_module_ui }}
+          - name: "imageroot"
+            path: ./imageroot
+            scan_enabled: ${{ inputs.scan_module_imageroot }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run vulnerability scanner
+        if: ${{matrix.scan_enabled == true && inputs.vulnerability_scan == true}}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ matrix.path }}
+          severity: ${{ inputs.severity }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          limit-severities-for-sarif: true
+      - name: Upload scan results to GitHub Security tab
+        if: ${{matrix.scan_enabled == true && inputs.vulnerability_scan == true}}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+      - name: Update GitHub Dependency Graph
+        if: ${{matrix.scan_enabled == true && inputs.update_dependencies_graph == true}}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ matrix.path }}
+          format: github
+          output: sbom.github.json
+          github-pat: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate CycloneDX SBOM
+        if: ${{matrix.scan_enabled == true && inputs.generate_sbom == true}}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ matrix.path }}
+          format: cyclonedx
+          output: ${{ matrix.name }}.cdx.json
+      - name: Upload CycloneDX SBOM
+        if: ${{matrix.scan_enabled == true && inputs.generate_sbom == true}}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-cyclonedx-sbom
+          path: ${{ matrix.name }}.cdx.json
   scan_images:
     name: "Scan images"
     runs-on: ubuntu-latest

@@ -7,6 +7,10 @@ on:
         description: "List of images to analyze"
         required: true
         type: string
+      update_dependencies_graph:
+        description: "Update GitHub Dependency Graph"
+        type: boolean
+        default: true
       vulnerability_scan:
         description: "Run vulnerability scan"
         type: boolean
@@ -43,3 +47,11 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
+      - name: Update GitHub Dependency Graph
+        if: ${{inputs.update_dependencies_graph == true}}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.image }}
+          format: github
+          output: sbom.github.json
+          github-pat: ${{ secrets.GITHUB_TOKEN }}

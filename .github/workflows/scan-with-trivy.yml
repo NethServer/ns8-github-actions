@@ -7,6 +7,10 @@ on:
         description: "List of images to analyze"
         required: true
         type: string
+      generate_sbom:
+        description: "Generate SBOM"
+        type: boolean
+        default: true
       update_dependencies_graph:
         description: "Update GitHub Dependency Graph"
         type: boolean
@@ -55,3 +59,22 @@ jobs:
           format: github
           output: sbom.github.json
           github-pat: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate CycloneDX SBOM
+        if: ${{inputs.generate_sbom == true}}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.image }}
+          format: cyclonedx
+          output: sbom-${{ github.run_id }}-${{ github.run_attempt }}.cdx.json
+      - name: Set safe filename
+        if: ${{inputs.generate_sbom == true}}
+        id: safe-filename
+        run: |
+          SAFE_NAME=$(echo "${{ matrix.image }}" | sed 's/[^a-zA-Z0-9]/-/g')
+          echo "safe_name=${SAFE_NAME}" >> $GITHUB_OUTPUT
+      - name: Upload CycloneDX SBOM
+        if: ${{inputs.generate_sbom == true}}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.safe-filename.outputs.safe_name }}-cyclonedx-sbom
+          path: sbom-${{ github.run_id }}-${{ github.run_attempt }}.cdx.json

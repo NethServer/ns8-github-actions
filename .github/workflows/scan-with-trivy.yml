@@ -33,9 +33,6 @@ on:
         type: string
         default: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
 
-permissions:
-  security-events: write
-
 jobs:
   scan_ui_imageroot:
     name: "Scan module UI and imageroot"

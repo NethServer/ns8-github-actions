@@ -7,6 +7,10 @@ on:
         description: "List of images to analyze"
         required: true
         type: string
+      vulnerability_scan:
+        description: "Run vulnerability scan"
+        type: boolean
+        default: true
       severity:
         description: "Severities of vulnerabilities to scan for and display"
         required: false
@@ -17,15 +21,16 @@ permissions:
   security-events: write
 
 jobs:
-  trivy:
-    name: "Run Trivy vulnerability scanner"
+  scan_images:
+    name: "Scan images"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         image: ${{ fromJson(inputs.images) }}
     steps:
-      - name: Run Trivy vulnerability scanner
+      - name: Run vulnerability scanner
+        if: ${{inputs.vulnerability_scan == true}}
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ matrix.image }}
@@ -33,7 +38,8 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
           limit-severities-for-sarif: true
-      - name: Upload Trivy scan results to GitHub Security tab
+      - name: Upload scan results to GitHub Security tab
+        if: ${{inputs.vulnerability_scan == true}}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'

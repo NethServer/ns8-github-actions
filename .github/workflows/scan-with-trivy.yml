@@ -87,6 +87,21 @@ jobs:
         with:
           name: ${{ matrix.name }}-cyclonedx-sbom
           path: ${{ matrix.name }}.cdx.json
+      - name: Upload SBOM to GitHub Release
+        if: ${{matrix.scan_enabled == true && inputs.generate_sbom == true && startsWith(github.ref, 'refs/tags/')}}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          # Check if this tag has a corresponding GitHub release
+          if gh release view "$TAG_NAME" &>/dev/null; then
+            echo "Release for tag $TAG_NAME found. Uploading SBOM file..."
+            gh release upload "$TAG_NAME" "${{ matrix.name }}.cdx.json" \
+              --clobber --repo ${{ github.repository }}
+          else
+            echo "No release found for tag $TAG_NAME. Skipping SBOM upload."
+          fi
+
   scan_images:
     name: "Scan images"
     runs-on: ubuntu-latest
@@ -136,3 +151,21 @@ jobs:
         with:
           name: ${{ steps.safe-filename.outputs.safe_name }}-cyclonedx-sbom
           path: sbom-${{ github.run_id }}-${{ github.run_attempt }}.cdx.json
+      - name: Upload SBOM to GitHub Release
+        if: ${{inputs.generate_sbom == true && startsWith(github.ref, 'refs/tags/')}}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          FILE_PATH: sbom-${{ github.run_id }}-${{ github.run_attempt }}.cdx.json
+        run: |
+          # rename the file to the a safe name
+          mv $FILE_PATH "${{ steps.safe-filename.outputs.safe_name }}.cdx.json"
+          # Check if this tag has a corresponding GitHub release
+          if gh release view "$TAG_NAME" &>/dev/null; then
+            echo "Release for tag $TAG_NAME found. Uploading SBOM file..."
+            gh release upload "$TAG_NAME" \
+              "${{ steps.safe-filename.outputs.safe_name }}.cdx.json" \
+              --clobber --repo ${{ github.repository }}
+          else
+            echo "No release found for tag $TAG_NAME. Skipping SBOM upload."
+          fi

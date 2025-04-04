@@ -84,7 +84,7 @@ jobs:
           podman pull ${{ steps.image.outputs.name }}
           images=$(podman image inspect ${{ steps.image.outputs.name }}  \
               -f '{{index .Config.Labels "org.nethserver.images"}}' | \
-            jq -Rc '(split("\\s+";null) + ["${{ steps.image.outputs.name }}"])')
+            jq -Rc '(gsub("^\\s+|\\s+$"; "") | split("\\s+";null) + ["${{ steps.image.outputs.name }}"])')
 
           echo "list=${images}" >> $GITHUB_OUTPUT
       - name: Check release type

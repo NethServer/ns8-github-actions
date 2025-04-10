@@ -49,6 +49,8 @@ jobs:
             scan_enabled: ${{ inputs.scan_module_imageroot }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
       - name: Run vulnerability scanner
         if: ${{matrix.scan_enabled == true && inputs.vulnerability_scan == true}}
         uses: aquasecurity/trivy-action@0.28.0
@@ -88,10 +90,10 @@ jobs:
           name: ${{ matrix.name }}-cyclonedx-sbom
           path: ${{ matrix.name }}.cdx.json
       - name: Upload SBOM to GitHub Release
-        if: ${{matrix.scan_enabled == true && inputs.generate_sbom == true && startsWith(github.ref, 'refs/tags/')}}
+        if: ${{matrix.scan_enabled == true && inputs.generate_sbom == true }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ github.event.workflow_run.head_branch || github.ref_name }}
         run: |
           # Check if this tag has a corresponding GitHub release
           if gh release view "$TAG_NAME" --repo ${{ github.repository }} &>/dev/null; then
@@ -152,10 +154,10 @@ jobs:
           name: ${{ steps.safe-filename.outputs.safe_name }}-cyclonedx-sbom
           path: sbom-${{ github.run_id }}-${{ github.run_attempt }}.cdx.json
       - name: Upload SBOM to GitHub Release
-        if: ${{inputs.generate_sbom == true && startsWith(github.ref, 'refs/tags/')}}
+        if: ${{inputs.generate_sbom == true }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME:  ${{ github.event.workflow_run.head_branch || github.ref_name }}
           FILE_PATH: sbom-${{ github.run_id }}-${{ github.run_attempt }}.cdx.json
         run: |
           # rename the file to the a safe name

@@ -32,6 +32,10 @@ on:
         required: false
         type: string
         default: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+      ui_path:
+        description: "Path to UI directory. The default value './ui' is suitable for all NS8 modules, while the core needs to pass './core/ui' instead."
+        type: string
+        default: "./ui"
 
 jobs:
   scan_ui_imageroot:
@@ -42,7 +46,7 @@ jobs:
       matrix:
         include:
           - name: "ui"
-            path: ./ui
+            path: ${{ inputs.ui_path }}
             scan_enabled: ${{ inputs.scan_module_ui }}
           - name: "imageroot"
             path: ./imageroot

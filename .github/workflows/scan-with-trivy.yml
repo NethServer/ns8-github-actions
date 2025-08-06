@@ -36,6 +36,10 @@ on:
         description: "Path to UI directory. The default value './ui' is suitable for all NS8 modules, while the core needs to pass './core/ui' instead."
         type: string
         default: "./ui"
+      imageroot_path:
+        description: "Path to imageroot directory. The default value './imageroot' is suitable for all NS8 modules, while the core needs to pass './core/imageroot' instead."
+        type: string
+        default: "./imageroot"
 
 jobs:
   scan_ui_imageroot:
@@ -49,7 +53,7 @@ jobs:
             path: ${{ inputs.ui_path }}
             scan_enabled: ${{ inputs.scan_module_ui }}
           - name: "imageroot"
-            path: ./imageroot
+            path: ${{ inputs.imageroot_path }}
             scan_enabled: ${{ inputs.scan_module_imageroot }}
     steps:
       - uses: actions/checkout@v4

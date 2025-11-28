@@ -81,7 +81,7 @@ jobs:
       - id: images
         run: |
           # Get the list of all images of the module including the module image
-          podman pull ${{ steps.image.outputs.name }}
+          podman pull ${{ steps.image.outputs.name }} || :
           images=$(podman image inspect ${{ steps.image.outputs.name }}  \
               -f '{{index .Config.Labels "org.nethserver.images"}}' | \
             jq -Rc '(gsub("^\\s+|\\s+$"; "") | split("\\s+";null) + ["${{ steps.image.outputs.name }}"])')

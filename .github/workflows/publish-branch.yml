@@ -50,11 +50,14 @@ jobs:
           buildah login -u ${{ github.actor }} --password-stdin ghcr.io <<<"${{ secrets.GITHUB_TOKEN }}"
           images=(${{ steps.build.outputs.images }})
           urls=""
+          : ${IMAGETAG:?}
+          # Sanitize tag syntax: slash are not allowed
+          imagetag=$(echo $IMAGETAG | tr / -)
           for image in "${images[@]}" ; do
-            buildah push $image docker://${image}:${IMAGETAG:?}
-            if [[ "${IMAGETAG}" == "main" || "${IMAGETAG}" == "master" ]]; then
+            buildah push $image docker://${image}:${imagetag}
+            if [[ "${imagetag}" == "main" || "${imagetag}" == "master" ]]; then
                 buildah push $image docker://${image}:latest
             fi
-            urls="${image}:${IMAGETAG} "$'\n'"${urls}"
+            urls="${image}:${imagetag} "$'\n'"${urls}"
           done
           echo "::notice title=Image URLs::${urls}"

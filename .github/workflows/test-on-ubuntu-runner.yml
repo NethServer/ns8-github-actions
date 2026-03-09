@@ -39,7 +39,7 @@ jobs:
         with:
           python-version: 3.9
       - name: Checkout
-        uses: actions/checkout@v2.4.0
+        uses: actions/checkout@v2.7.0
         with:
             ref: ${{ inputs.repo_ref }}
       - name: Setup SSH Keys

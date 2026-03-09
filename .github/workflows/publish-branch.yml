@@ -52,7 +52,7 @@ jobs:
           urls=""
           : "${IMAGETAG:?}"
           # Sanitize tag syntax: slashes are not allowed
-          imagetag=$(echo $IMAGETAG | tr / -)
+          imagetag=$(printf '%s' "${IMAGETAG}" | tr '/' '-')
           for image in "${images[@]}" ; do
             buildah push $image docker://${image}:${imagetag}
             if [[ "${imagetag}" == "main" || "${imagetag}" == "master" ]]; then

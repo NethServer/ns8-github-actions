@@ -50,8 +50,8 @@ jobs:
           buildah login -u ${{ github.actor }} --password-stdin ghcr.io <<<"${{ secrets.GITHUB_TOKEN }}"
           images=(${{ steps.build.outputs.images }})
           urls=""
-          : ${IMAGETAG:?}
-          # Sanitize tag syntax: slash are not allowed
+          : "${IMAGETAG:?}"
+          # Sanitize tag syntax: slashes are not allowed
           imagetag=$(echo $IMAGETAG | tr / -)
           for image in "${images[@]}" ; do
             buildah push $image docker://${image}:${imagetag}

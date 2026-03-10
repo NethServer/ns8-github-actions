@@ -67,4 +67,4 @@ jobs:
              ${{ github.workspace }}/${{ inputs.path }}/tests/outputs/
       - name: Debugging with tmate
         if: ${{ inputs.debug_shell == true && ! cancelled() && always() }}
-        uses: mxschmitt/action-tmate@v3.1
+        uses: mxschmitt/action-tmate@v3.23

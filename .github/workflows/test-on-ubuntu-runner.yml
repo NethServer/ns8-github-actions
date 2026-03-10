@@ -32,7 +32,7 @@ on:
 
 jobs:
   test-module:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Setup Python
         uses: actions/setup-python@v2.3.4

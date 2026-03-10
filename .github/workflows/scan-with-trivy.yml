@@ -56,7 +56,7 @@ jobs:
             path: ${{ inputs.imageroot_path }}
             scan_enabled: ${{ inputs.scan_module_imageroot }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
       - name: Run vulnerability scanner

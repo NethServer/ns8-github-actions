@@ -35,11 +35,11 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Setup Python
-        uses: actions/setup-python@v2.3.1
+        uses: actions/setup-python@v2.3.4
         with:
           python-version: 3.9
       - name: Checkout
-        uses: actions/checkout@v2.4.0
+        uses: actions/checkout@v2.7.0
         with:
             ref: ${{ inputs.repo_ref }}
       - name: Setup SSH Keys
@@ -60,7 +60,7 @@ jobs:
         working-directory: ${{ github.workspace }}/${{ inputs.path }}
       - name: Save the tests results
         if: always()
-        uses: actions/upload-artifact@v4.4.3
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: tests-logs
           path: |

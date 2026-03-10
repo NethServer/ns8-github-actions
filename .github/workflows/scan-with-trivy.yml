@@ -93,7 +93,7 @@ jobs:
           output: ${{ matrix.name }}.cdx.json
       - name: Upload CycloneDX SBOM
         if: ${{matrix.scan_enabled == true && inputs.generate_sbom == true}}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}-cyclonedx-sbom
           path: ${{ matrix.name }}.cdx.json
@@ -157,7 +157,7 @@ jobs:
           echo "safe_name=${SAFE_NAME}" >> $GITHUB_OUTPUT
       - name: Upload CycloneDX SBOM
         if: ${{inputs.generate_sbom == true}}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.safe-filename.outputs.safe_name }}-cyclonedx-sbom
           path: sbom-${{ github.run_id }}-${{ github.run_attempt }}.cdx.json

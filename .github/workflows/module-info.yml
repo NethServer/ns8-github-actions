@@ -57,7 +57,8 @@ jobs:
           then
             tag="latest"
           fi
-          echo "name=${tag}" >> $GITHUB_OUTPUT
+          # Sanitize tag, slash is forbidden
+          echo "name=${tag//\//-}" >> $GITHUB_OUTPUT
       - id: owner
         run: |
           owner=$(basename ${{ github.event.organization.url || github.event.repository.owner.url }} |  tr '[:upper:]' '[:lower:]')

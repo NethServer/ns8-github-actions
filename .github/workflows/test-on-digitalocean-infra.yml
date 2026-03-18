@@ -113,12 +113,12 @@ jobs:
             -f "description=Test on DigitalOcean (${{ matrix.node }})" \
             -f "context=continuous-integration/robotframework/${{ matrix.node }})"
       - name: "Checkout the module repository"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.repo_ref }}
           path: module
       - name: "Checkout the infrastructure repository"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
         with:
           repository: NethServer/ns8-terraform-infra
           path: infra
@@ -182,7 +182,7 @@ jobs:
           COREMODULES: ${{ inputs.coremodules }}
       - name: "Save tests results"
         if: always()
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v6
         with:
           name: tests-logs-${{ matrix.node }}
           path: |

@@ -37,6 +37,14 @@ if [ ! -x ${venvroot}/bin/robot ] ; then
 fi
 cd /srv/source
 mkdir -vp tests/outputs/
+
+# Exclude UI tests if RUN_UI_TESTS is not set to "true"
+if [ "${RUN_UI_TESTS}" = "true" ]; then
+    ui_tag_filter=""
+else
+    ui_tag_filter="--exclude ui"
+fi
+
 exec ${venvroot}/bin/robot \
     -v NODE_ADDR:${LEADER_NODE} \
     -v IMAGE_URL:${IMAGE_URL} \
@@ -44,5 +52,6 @@ exec ${venvroot}/bin/robot \
     -v RUN_UI_TESTS:${RUN_UI_TESTS} \
     --name test-ns8-module \
     --skiponfailure unstable \
+    ${ui_tag_filter} \
     -d tests/outputs "${@}" tests/
 EOF

@@ -49,6 +49,7 @@ jobs:
           else
             echo "run_ui_tests=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "//// run_ui_tests=$(grep run_ui_tests "$GITHUB_OUTPUT" | cut -d= -f2)"
 
   run_tests:
     needs: [module, chooser, detect_changes]

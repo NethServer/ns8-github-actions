@@ -26,7 +26,6 @@ podman run -i \
     --env=venvroot \
     --env=LEADER_NODE \
     --env=IMAGE_URL \
-    --env=RUN_UI_TESTS \
     docker.io/python:3.11-alpine \
     ash -l -s -- "${@}" <<'EOF'
 set -e
@@ -34,6 +33,7 @@ echo "$ssh_key" > /tmp/idssh
 if [ ! -x ${venvroot}/bin/robot ] ; then
     python3 -mvenv ${venvroot} --upgrade
     ${venvroot}/bin/pip3 install -q -r /srv/source/tests/pythonreq.txt
+    ${venvroot}/bin/rfbrowser init
 fi
 cd /srv/source
 mkdir -vp tests/outputs/

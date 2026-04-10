@@ -13,23 +13,25 @@ LEADER_NODE="${1:?missing LEADER_NODE argument}"
 IMAGE_URL="${2:?missing IMAGE_URL argument}"
 shift 2
 
-ssh_key="$(< $SSH_KEYFILE)"
+ssh_key="$(<$SSH_KEYFILE)"
 venvroot=/usr/local/venv
+script_dir="$(cd "$(dirname "$0")" && pwd)"
 
 echo "Test! RUN_UI_TESTS=${RUN_UI_TESTS} ////"
 
 if [ "${RUN_UI_TESTS}" = "true" ]; then
-    container_image="mcr.microsoft.com/playwright/python:v1.51.0-noble"
+    container_image="mcr.microsoft.com/playwright:v1.51.0-noble"
     container_shell="bash"
-    pythonreq="/srv/source/tests/pythonreq-ui.txt"
+    pythonreq="/srv/ns8-github-actions/tests/pythonreq-ui.txt"
 else
     container_image="docker.io/python:3.11-alpine"
     container_shell="ash"
-    pythonreq="/srv/source/tests/pythonreq.txt"
+    pythonreq="/srv/ns8-github-actions/tests/pythonreq.txt"
 fi
 
 podman run -i \
     --volume=.:/srv/source:z \
+    --volume=${script_dir}/tests:/srv/ns8-github-actions/tests:z \
     --volume=rftest-cache:${venvroot}:z \
     --replace --name=rftest \
     --env=ssh_key \
@@ -44,9 +46,13 @@ set -e
 echo "$ssh_key" > /tmp/idssh
 if [ ! -x ${venvroot}/bin/robot ] ; then
     if command -v apt-get > /dev/null 2>&1; then
-        apt install -y -q python3.12-venv
+        # mcr.microsoft.com/playwright:*-noble has npm pre-installed but no Python
+        apt-get update -q
+        apt-get install -y -q python3 python3-venv
+        python3 -mvenv ${venvroot}
+    else
+        python3 -mvenv ${venvroot} --upgrade
     fi
-    python3 -mvenv ${venvroot} --upgrade
     ${venvroot}/bin/pip3 install -q -r ${pythonreq}
 fi
 if [ "${RUN_UI_TESTS}" = "true" ] && [ ! -f ${venvroot}/.rfbrowser_initialized ] ; then

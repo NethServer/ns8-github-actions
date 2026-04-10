@@ -5,13 +5,13 @@ on:
     inputs:
       script:
         required: false
-        description: "Name of the script to execute"
+        description: "Name of the script to execute. If empty, the default script from ns8-github-actions is used."
         type: string
-        default: test-module.sh
+        default: ""
       path:
         required: false
         type: string
-        description: "Name of the script to execute, default `test-module.sh`"
+        description: "Subdirectory of the module repository to use as working directory when running the test script"
       args:
         required: false
         type: string
@@ -55,6 +55,11 @@ on:
         type: string
         default: "ci.nethserver.net"
         description: "DigitalOcean domain where to create the DNS records"
+      run_ui_tests:
+        required: false
+        type: boolean
+        default: false
+        description: "If true, run UI tests"
     secrets:
       do_token:
         required: true
@@ -117,6 +122,15 @@ jobs:
         with:
           ref: ${{ inputs.repo_ref }}
           path: module
+      - name: "Get ns8-github-actions ref"
+        id: ns8_ga_ref
+        run: echo "ref=$(echo '${{ github.workflow_ref }}' | cut -d'@' -f2)" >> $GITHUB_OUTPUT
+      - name: "Checkout ns8-github-actions"
+        uses: actions/checkout@v6
+        with:
+          repository: NethServer/ns8-github-actions
+          ref: ${{ steps.ns8_ga_ref.outputs.ref }}
+          path: ns8-github-actions
       - name: "Checkout the infrastructure repository"
         uses: actions/checkout@v6
         with:
@@ -172,14 +186,24 @@ jobs:
             set -e -x
             create-cluster ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }}:55820 10.5.4.0/24 Nethesis,1234
           EOF
+      - name: "Resolve test script"
+        id: resolve_script
+        run: |
+          if [ -n "${{ inputs.script }}" ]; then
+            echo "path=${{ github.workspace }}/module/${{ inputs.path }}/${{ inputs.script }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=${{ github.workspace }}/ns8-github-actions/scripts/test-module.sh" >> "$GITHUB_OUTPUT"
+          fi
       - name: "Run tests"
         id: run_tests
         run: |
-          ./${{ inputs.script }} ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} ${{ inputs.args }}
+          echo "Running test script: ${{ steps.resolve_script.outputs.path }} ////"
+          bash "${{ steps.resolve_script.outputs.path }}" ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} ${{ inputs.args }}
         working-directory: ${{ github.workspace }}/module/${{ inputs.path }}
         env:
           SSH_KEYFILE: ${{ github.workspace }}/key
           COREMODULES: ${{ inputs.coremodules }}
+          RUN_UI_TESTS: ${{ inputs.run_ui_tests }}
       - name: "Save tests results"
         if: always()
         uses: actions/upload-artifact@v6

@@ -44,7 +44,7 @@ set -e
 echo "$ssh_key" > /tmp/idssh
 if [ ! -x ${venvroot}/bin/robot ] ; then
     if command -v apt-get > /dev/null 2>&1; then
-        apt-get install -y -q python3-venv
+        apt install -y -q python3.12-venv
     fi
     python3 -mvenv ${venvroot} --upgrade
     ${venvroot}/bin/pip3 install -q -r ${pythonreq}

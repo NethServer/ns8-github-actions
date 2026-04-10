@@ -18,6 +18,16 @@ venvroot=/usr/local/venv
 
 echo "Test! RUN_UI_TESTS=${RUN_UI_TESTS} ////"
 
+if [ "${RUN_UI_TESTS}" = "true" ]; then
+    container_image="mcr.microsoft.com/playwright/python:v1.51.0-noble"
+    container_shell="bash"
+    pythonreq="/srv/source/tests/pythonreq-ui.txt"
+else
+    container_image="docker.io/python:3.11-alpine"
+    container_shell="ash"
+    pythonreq="/srv/source/tests/pythonreq.txt"
+fi
+
 podman run -i \
     --volume=.:/srv/source:z \
     --volume=rftest-cache:${venvroot}:z \
@@ -26,14 +36,19 @@ podman run -i \
     --env=venvroot \
     --env=LEADER_NODE \
     --env=IMAGE_URL \
-    docker.io/python:3.11-alpine \
-    ash -l -s -- "${@}" <<'EOF'
+    --env=RUN_UI_TESTS \
+    --env=pythonreq \
+    "${container_image}" \
+    ${container_shell} -l -s -- "${@}" <<'EOF'
 set -e
 echo "$ssh_key" > /tmp/idssh
 if [ ! -x ${venvroot}/bin/robot ] ; then
     python3 -mvenv ${venvroot} --upgrade
-    ${venvroot}/bin/pip3 install -q -r /srv/source/tests/pythonreq.txt
-    ${venvroot}/bin/python3 -m Browser.entry init
+    ${venvroot}/bin/pip3 install -q -r ${pythonreq}
+fi
+if [ "${RUN_UI_TESTS}" = "true" ] && [ ! -f ${venvroot}/.rfbrowser_initialized ] ; then
+    ${venvroot}/bin/rfbrowser init
+    touch ${venvroot}/.rfbrowser_initialized
 fi
 cd /srv/source
 mkdir -vp tests/outputs/

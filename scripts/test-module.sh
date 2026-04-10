@@ -33,7 +33,7 @@ echo "$ssh_key" > /tmp/idssh
 if [ ! -x ${venvroot}/bin/robot ] ; then
     python3 -mvenv ${venvroot} --upgrade
     ${venvroot}/bin/pip3 install -q -r /srv/source/tests/pythonreq.txt
-    ${venvroot}/bin/rfbrowser init
+    ${venvroot}/bin/python3 -m Browser.entry init
 fi
 cd /srv/source
 mkdir -vp tests/outputs/

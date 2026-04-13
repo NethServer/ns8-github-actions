@@ -261,10 +261,10 @@ jobs:
             echo "No screenshots found in test outputs." >> comment.md
           else
             for f in "${screenshots[@]}"; do
-              cml publish --md --title "$(basename "$f")" "$f" --repo="${{ github.repository }}" >> comment.md
+              cml publish --md --title "$(basename "$f")" "$f" --repo="https://github.com/${{ github.repository }}" >> comment.md
             done
           fi
-          cml comment create --target=pr/252 --repo="${{ github.repository }}" comment.md  #### //// TODO: remove hardcoded PR
+          cml comment create --target=pr/252 --repo="https://github.com/${{ github.repository }}" comment.md  #### //// TODO: remove hardcoded PR
       - name: "Debugging with tmate"
         if: ${{ inputs.debug_shell == true && ! cancelled() && always() }}
         uses: mxschmitt/action-tmate@v3

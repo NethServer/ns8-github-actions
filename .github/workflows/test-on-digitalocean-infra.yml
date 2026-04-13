@@ -243,6 +243,66 @@ jobs:
             -f "target_url=$status_page" \
             -f "description=Test on DigitalOcean (${{ matrix.node }})" \
             -f "context=continuous-integration/robotframework/${{ matrix.node }})"
+      - name: "Comment PR with UI test screenshots"
+        if: inputs.run_ui_tests == true
+        uses: actions/github-script@v7
+        env:
+          MODULE_PATH: ${{ inputs.path }}
+          MATRIX_NODE: ${{ matrix.node }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const prNumber = context.payload.pull_request?.number
+              ?? context.payload.workflow_run?.pull_requests?.[0]?.number;
+            if (!prNumber) {
+              core.notice('Not triggered from a pull request, skipping screenshot comment');
+              return;
+            }
+
+            const modulePath = process.env.MODULE_PATH || '';
+            const matrixNode = process.env.MATRIX_NODE;
+            const outputsDir = path.join(
+              process.env.GITHUB_WORKSPACE,
+              'module',
+              ...modulePath ? [modulePath] : [],
+              'tests', 'outputs'
+            );
+
+            const screenshots = [];
+            function findScreenshots(dir) {
+              if (!fs.existsSync(dir)) return;
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                  findScreenshots(fullPath);
+                } else if (/\.(png|jpg|jpeg|gif|webp)$/i.test(entry.name)) {
+                  screenshots.push(path.relative(outputsDir, fullPath));
+                }
+              }
+            }
+            findScreenshots(outputsDir);
+
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const artifactName = `tests-logs-${matrixNode}`;
+
+            let body = `### UI Test Screenshots \`${matrixNode}\`\n\n`;
+            if (screenshots.length > 0) {
+              body += `${screenshots.length} screenshot(s) captured. Download the \`${artifactName}\` artifact from the [workflow run](${runUrl}):\n\n`;
+              for (const s of screenshots) {
+                body += `- \`${s}\`\n`;
+              }
+            } else {
+              body += `No screenshots found in test outputs. See the [workflow run](${runUrl}) for full artifacts.\n`;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });
       - name: "Debugging with tmate"
         if: ${{ inputs.debug_shell == true && ! cancelled() && always() }}
         uses: mxschmitt/action-tmate@v3

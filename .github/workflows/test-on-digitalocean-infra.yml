@@ -245,7 +245,7 @@ jobs:
             -f "context=continuous-integration/robotframework/${{ matrix.node }})"
       - name: "Comment PR with UI test screenshots"
         if: inputs.run_ui_tests == true
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           MODULE_PATH: ${{ inputs.path }}
           MATRIX_NODE: ${{ matrix.node }}

@@ -7,6 +7,9 @@
 
 set -e -a
 
+# ////
+_script_start=$(date +%s)
+
 # Path to the SSH private key used to connect to the NS8 leader node
 SSH_KEYFILE=${SSH_KEYFILE:-$HOME/.ssh/id_rsa}
 
@@ -56,6 +59,7 @@ podman run -i \
     --env=IMAGE_URL \
     --env=RUN_UI_TESTS \
     --env=pythonreq \
+    --env=_script_start \
     "${container_image}" \
     ${container_shell} -l -s -- "${@}" <<'EOF'
 set -e
@@ -103,6 +107,8 @@ if [ "${RUN_UI_TESTS}" = "true" ]; then
 else
     ui_tag_filter="--exclude ui"
 fi
+
+echo "DEBUG: $(( $(date +%s) - _script_start ))s elapsed from script start to robot launch ////"
 
 exec ${venvroot}/bin/robot \
     -v NODE_ADDR:${LEADER_NODE} \

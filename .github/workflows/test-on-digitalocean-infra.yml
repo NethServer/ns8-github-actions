@@ -243,73 +243,28 @@ jobs:
             -f "target_url=$status_page" \
             -f "description=Test on DigitalOcean (${{ matrix.node }})" \
             -f "context=continuous-integration/robotframework/${{ matrix.node }})"
-      - name: "Comment PR with UI test screenshots"
+      - name: "Setup CML"
         if: inputs.run_ui_tests == true
-        uses: actions/github-script@v9
-        env:
-          MODULE_PATH: ${{ inputs.path }}
-          MATRIX_NODE: ${{ matrix.node }}
+        uses: iterative/setup-cml@v2
         with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-
-            //// TODO: remove fallback PR once PR detection is confirmed to work
-            const fallbackOwner = 'NethServer';
-            const fallbackRepo = 'ns8-mail';
-            const fallbackPrNumber = 252;
-
-            const prNumber = context.payload.pull_request?.number
-              ?? context.payload.workflow_run?.pull_requests?.[0]?.number
-              ?? fallbackPrNumber;
-            const prOwner = prNumber === fallbackPrNumber ? fallbackOwner : context.repo.owner;
-            const prRepo = prNumber === fallbackPrNumber ? fallbackRepo : context.repo.repo;
-            if (prNumber === fallbackPrNumber) {
-              core.warning(`PR number not detected from context, falling back to ${fallbackOwner}/${fallbackRepo}#${fallbackPrNumber} for testing`);
-            }
-
-            const modulePath = process.env.MODULE_PATH || '';
-            const matrixNode = process.env.MATRIX_NODE;
-            const outputsDir = path.join(
-              process.env.GITHUB_WORKSPACE,
-              'module',
-              ...modulePath ? [modulePath] : [],
-              'tests', 'outputs'
-            );
-
-            const screenshots = [];
-            function findScreenshots(dir) {
-              if (!fs.existsSync(dir)) return;
-              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-                const fullPath = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                  findScreenshots(fullPath);
-                } else if (/\.(png|jpg|jpeg|gif|webp)$/i.test(entry.name)) {
-                  screenshots.push(path.relative(outputsDir, fullPath));
-                }
-              }
-            }
-            findScreenshots(outputsDir);
-
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const artifactName = `tests-logs-${matrixNode}`;
-
-            let body = `### UI Test Screenshots \`${matrixNode}\`\n\n`;
-            if (screenshots.length > 0) {
-              body += `${screenshots.length} screenshot(s) captured. Download the \`${artifactName}\` artifact from the [workflow run](${runUrl}):\n\n`;
-              for (const s of screenshots) {
-                body += `- \`${s}\`\n`;
-              }
-            } else {
-              body += `No screenshots found in test outputs. See the [workflow run](${runUrl}) for full artifacts.\n`;
-            }
-
-            await github.rest.issues.createComment({
-              owner: prOwner,
-              repo: prRepo,
-              issue_number: prNumber,
-              body,
-            });
+          vega: false
+      - name: "Post screenshots to PR"
+        if: inputs.run_ui_tests == true
+        env:
+          REPO_TOKEN: ${{ github.token }}
+          MODULE_PATH: ${{ inputs.path }}
+        run: |
+          output_dir="${{ github.workspace }}/module${MODULE_PATH:+/$MODULE_PATH}/tests/outputs"
+          echo "### UI Test Screenshots \`${{ matrix.node }}\`" >> comment.md
+          mapfile -d '' screenshots < <(find "$output_dir" -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.gif' -o -iname '*.webp' \) -print0 2>/dev/null | sort -z)
+          if [ ${#screenshots[@]} -eq 0 ]; then
+            echo "No screenshots found in test outputs." >> comment.md
+          else
+            for f in "${screenshots[@]}"; do
+              cml publish --md --title "$(basename "$f")" "$f" >> comment.md
+            done
+          fi
+          cml comment create --target=pr/252 comment.md  #### TODO: remove hardcoded PR
       - name: "Debugging with tmate"
         if: ${{ inputs.debug_shell == true && ! cancelled() && always() }}
         uses: mxschmitt/action-tmate@v3

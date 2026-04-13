@@ -254,11 +254,18 @@ jobs:
             const fs = require('fs');
             const path = require('path');
 
+            //// TODO: remove fallback PR once PR detection is confirmed to work
+            const fallbackOwner = 'NethServer';
+            const fallbackRepo = 'ns8-mail';
+            const fallbackPrNumber = 252;
+
             const prNumber = context.payload.pull_request?.number
-              ?? context.payload.workflow_run?.pull_requests?.[0]?.number;
-            if (!prNumber) {
-              core.notice('Not triggered from a pull request, skipping screenshot comment');
-              return;
+              ?? context.payload.workflow_run?.pull_requests?.[0]?.number
+              ?? fallbackPrNumber;
+            const prOwner = prNumber === fallbackPrNumber ? fallbackOwner : context.repo.owner;
+            const prRepo = prNumber === fallbackPrNumber ? fallbackRepo : context.repo.repo;
+            if (prNumber === fallbackPrNumber) {
+              core.warning(`PR number not detected from context, falling back to ${fallbackOwner}/${fallbackRepo}#${fallbackPrNumber} for testing`);
             }
 
             const modulePath = process.env.MODULE_PATH || '';
@@ -298,8 +305,8 @@ jobs:
             }
 
             await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner: prOwner,
+              repo: prRepo,
               issue_number: prNumber,
               body,
             });

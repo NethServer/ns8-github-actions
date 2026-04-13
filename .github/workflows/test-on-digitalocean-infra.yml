@@ -259,7 +259,7 @@ jobs:
             echo "No screenshots found in test outputs." >> comment.md
           else
             for f in "${screenshots[@]}"; do
-              cml publish --md --title "$(basename "$f")" "$f" --repo="https://github.com/${{ github.repository }}" >> comment.md
+              echo "![$(basename "$f")]($f)" >> comment.md
             done
           fi
           cml comment create --target=pr/252 --repo="https://github.com/${{ github.repository }}" comment.md  #### //// TODO: remove hardcoded PR

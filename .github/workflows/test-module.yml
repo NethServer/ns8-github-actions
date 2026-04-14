@@ -3,6 +3,11 @@ name: Test module
 on:
   workflow_call:
     inputs:
+      run_ui_tests:
+        description: "When to run UI tests: on_ui_change, on_renovate_ui_change, never"
+        required: false
+        type: string
+        default: on_renovate_ui_change
       debug_shell:
         description: "Debug shell"
         required: false
@@ -34,11 +39,11 @@ jobs:
             echo "node_b=rl1" >> "$GITHUB_OUTPUT"
           fi
 
-  detect_changes:
+  detect_ui_changes:
     name: "Detect UI changes"
     runs-on: ubuntu-latest
     outputs:
-      run_ui_tests: ${{ steps.changes.outputs.run_ui_tests }}
+      ui_has_changed: ${{ steps.changes.outputs.ui_has_changed }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -47,14 +52,14 @@ jobs:
       - id: changes
         run: |
           if git diff --name-only HEAD^ HEAD | grep -qE '^ui/|^build-images\.sh$'; then
-            echo "run_ui_tests=true" >> "$GITHUB_OUTPUT"
+            echo "ui_has_changed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "run_ui_tests=false" >> "$GITHUB_OUTPUT"
+            echo "ui_has_changed=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "//// run_ui_tests=$(grep run_ui_tests "$GITHUB_OUTPUT" | cut -d= -f2)"
+          echo "//// ui_has_changed=$(grep ui_has_changed "$GITHUB_OUTPUT" | cut -d= -f2)"
 
   run_tests:
-    needs: [module, chooser, detect_changes]
+    needs: [module, chooser, detect_ui_changes]
     strategy:
       fail-fast: false
       matrix:
@@ -70,8 +75,8 @@ jobs:
         }}
       args: ${{ format('ghcr.io/{0}/{1}:{2} -v SCENARIO:{3}', needs.module.outputs.owner, needs.module.outputs.name, needs.module.outputs.tag, matrix.scenario) }}
       repo_ref: ${{ needs.module.outputs.sha }}
-      run_ui_tests: true
-      # //// run_ui_tests: ${{ needs.detect_changes.outputs.run_ui_tests == 'true' }}
+      # run_ui_tests: true ////
+      run_ui_tests: ${{ inputs.run_ui_tests != 'never' && needs.detect_ui_changes.outputs.ui_has_changed == 'true' }}
       debug_shell: ${{ inputs.debug_shell }}
     secrets:
       do_token: ${{ secrets.do_token }}

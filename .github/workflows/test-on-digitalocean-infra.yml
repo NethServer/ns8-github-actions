@@ -259,6 +259,7 @@ jobs:
             echo "No screenshots found in test outputs." >> comment.md
           else
             for f in "${screenshots[@]}"; do
+              echo "**$(basename "$f")**" >> comment.md
               echo "![$(basename "$f")]($f)" >> comment.md
             done
           fi

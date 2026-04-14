@@ -266,7 +266,13 @@ jobs:
               echo "" >> comment.md
             done
           fi
-          cml comment create --target=pr/252 --repo="https://github.com/${{ github.repository }}" comment.md  #### //// TODO: remove hardcoded PR
+          # //// remove hardcoded PR targets
+          if [[ "${{ github.repository }}" == */ns8-mail ]]; then
+            pr_target="pr/252"
+          elif [[ "${{ github.repository }}" == */ns8-core ]]; then
+            pr_target="pr/1142"
+          fi
+          cml comment create --target="$pr_target" --repo="https://github.com/${{ github.repository }}" comment.md
       - name: "Debugging with tmate"
         if: ${{ inputs.debug_shell == true && ! cancelled() && always() }}
         uses: mxschmitt/action-tmate@v3

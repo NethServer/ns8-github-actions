@@ -36,10 +36,12 @@ if [ "${RUN_UI_TESTS}" = "true" ]; then
     container_image="mcr.microsoft.com/playwright:v1.51.0-noble"
     container_shell="bash"
     pythonreq="/srv/ns8-github-actions/tests/pythonreq-ui.txt"
+    cache_volume="rftest-cache-ui"
 else
     container_image="docker.io/python:3.11-alpine"
     container_shell="ash"
     pythonreq="/srv/ns8-github-actions/tests/pythonreq.txt"
+    cache_volume="rftest-cache"
 fi
 
 # Run the test suite inside a container.
@@ -51,7 +53,7 @@ fi
 podman run -i \
     --volume=.:/srv/source:z \
     --volume=${script_dir}/tests:/srv/ns8-github-actions/tests:z \
-    --volume=rftest-cache:${venvroot}:z \
+    --volume=${cache_volume}:${venvroot}:z \
     --replace --name=rftest \
     --env=ssh_key \
     --env=venvroot \

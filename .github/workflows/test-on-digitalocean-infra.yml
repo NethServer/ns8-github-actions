@@ -190,8 +190,10 @@ jobs:
         id: resolve_script
         run: |
           if [ -n "${{ inputs.script }}" ]; then
+            echo "Using custom script: ${{ inputs.script }} ////"
             echo "path=${{ github.workspace }}/module/${{ inputs.path }}/${{ inputs.script }}" >> "$GITHUB_OUTPUT"
           else
+            echo "Using default script: ns8-github-actions/scripts/test-module.sh ////"
             echo "path=${{ github.workspace }}/ns8-github-actions/scripts/test-module.sh" >> "$GITHUB_OUTPUT"
           fi
       - name: "Run tests"
@@ -260,6 +262,7 @@ jobs:
           else
             for f in "${screenshots[@]}"; do
               name=$(basename "${f%.*}")
+              name="${name//_/ }"
               echo "**${name^}**" >> comment.md
               echo "" >> comment.md
               echo "![$(basename "$f")]($f)" >> comment.md

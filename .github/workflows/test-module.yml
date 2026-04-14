@@ -48,6 +48,7 @@ jobs:
 
   run_tests:
     needs: [module, chooser, check_ui_tests_needed]
+    name: "Run tests"
     strategy:
       fail-fast: false
       matrix:

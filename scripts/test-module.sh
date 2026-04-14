@@ -33,7 +33,7 @@ echo "Test! RUN_UI_TESTS=${RUN_UI_TESTS} ////"
 # UI tests require the Playwright image (Debian-based, includes browser binaries).
 # Non-UI tests use a lightweight Alpine Python image.
 if [ "${RUN_UI_TESTS}" = "true" ]; then
-    container_image="mcr.microsoft.com/playwright/python:v1.51.0-noble"
+    container_image="mcr.microsoft.com/playwright:v1.51.0-noble"
     container_shell="bash"
     pythonreq="/srv/ns8-github-actions/tests/pythonreq-ui.txt"
 else
@@ -76,9 +76,9 @@ pythonreq_cached_checksum=$(cat "${pythonreq_checksum_file}" 2>/dev/null || true
 
 if [ ! -x "${venvroot}/bin/robot" ] || [ "${pythonreq_current_checksum}" != "${pythonreq_cached_checksum}" ] ; then
     if command -v apt-get > /dev/null 2>&1; then
-        # mcr.microsoft.com/playwright/python:*-noble has Python but not venv
+        # mcr.microsoft.com/playwright:*-noble has npm pre-installed but no Python
         apt-get update -q
-        apt-get install -y -q python3-venv
+        apt-get install -y -q python3 python3-venv
         python3 -mvenv "${venvroot}"
     else
         # Alpine image already has Python; --upgrade refreshes pip/setuptools in-place

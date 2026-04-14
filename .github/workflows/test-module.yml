@@ -3,7 +3,7 @@ name: Test module
 on:
   workflow_call:
     inputs:
-      run_ui_tests:
+      ui_tests_strategy:
         description: "When to run UI tests: on_ui_change, on_renovate_ui_change, never"
         required: false
         type: string
@@ -39,11 +39,11 @@ jobs:
             echo "node_b=rl1" >> "$GITHUB_OUTPUT"
           fi
 
-  detect_ui_changes:
-    name: "Detect UI changes"
+  detect_changes:
+    name: "Detect changes"
     runs-on: ubuntu-latest
     outputs:
-      ui_has_changed: ${{ steps.changes.outputs.ui_has_changed }}
+      should_run_ui_tests: ${{ steps.changes.outputs.should_run_ui_tests }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -52,14 +52,39 @@ jobs:
       - id: changes
         run: |
           if git diff --name-only HEAD^ HEAD | grep -qE '^ui/|^build-images\.sh$'; then
-            echo "ui_has_changed=true" >> "$GITHUB_OUTPUT"
+            has_ui_changes=true
           else
-            echo "ui_has_changed=false" >> "$GITHUB_OUTPUT"
+            has_ui_changes=false
           fi
-          echo "//// ui_has_changed=$(grep ui_has_changed "$GITHUB_OUTPUT" | cut -d= -f2)"
+
+          branch_name="${{ github.event.workflow_run.head_branch || github.ref_name }}"
+          if [[ "$branch_name" == renovate-* || "$branch_name" == renovate/* ]]; then
+            is_renovate=true
+          else
+            is_renovate=false
+          fi
+
+          ui_tests_strategy="${{ inputs.ui_tests_strategy }}"
+          if [[ "$ui_tests_strategy" == "never" ]]; then
+            should_run_ui_tests=false
+          elif [[ "$ui_tests_strategy" == "on_ui_change" ]]; then
+            should_run_ui_tests=$has_ui_changes
+          elif [[ "$ui_tests_strategy" == "on_renovate_ui_change" ]]; then
+            if [[ "$has_ui_changes" == "true" && "$is_renovate" == "true" ]]; then
+              should_run_ui_tests=true
+            else
+              should_run_ui_tests=false
+            fi
+          else
+            should_run_ui_tests=false
+          fi
+
+          echo "should_run_ui_tests=$should_run_ui_tests" >> "$GITHUB_OUTPUT"
+
+          echo "//// branch=$branch_name has_ui_changes=$has_ui_changes is_renovate=$is_renovate strategy=$ui_tests_strategy should_run_ui_tests=$should_run_ui_tests"
 
   run_tests:
-    needs: [module, chooser, detect_ui_changes]
+    needs: [module, chooser, detect_changes]
     strategy:
       fail-fast: false
       matrix:
@@ -75,8 +100,7 @@ jobs:
         }}
       args: ${{ format('ghcr.io/{0}/{1}:{2} -v SCENARIO:{3}', needs.module.outputs.owner, needs.module.outputs.name, needs.module.outputs.tag, matrix.scenario) }}
       repo_ref: ${{ needs.module.outputs.sha }}
-      run_ui_tests: true
-      # //// run_ui_tests: ${{ inputs.run_ui_tests != 'never' && needs.detect_ui_changes.outputs.ui_has_changed == 'true' }}
+      run_ui_tests: ${{ needs.detect_changes.outputs.should_run_ui_tests == 'true' }}
       debug_shell: ${{ inputs.debug_shell }}
     secrets:
       do_token: ${{ secrets.do_token }}

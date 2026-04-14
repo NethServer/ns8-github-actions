@@ -261,7 +261,9 @@ jobs:
             for f in "${screenshots[@]}"; do
               name=$(basename "${f%.*}")
               echo "**${name^}**" >> comment.md
+              echo "" >> comment.md
               echo "![$(basename "$f")]($f)" >> comment.md
+              echo "" >> comment.md
             done
           fi
           cml comment create --target=pr/252 --repo="https://github.com/${{ github.repository }}" comment.md  #### //// TODO: remove hardcoded PR

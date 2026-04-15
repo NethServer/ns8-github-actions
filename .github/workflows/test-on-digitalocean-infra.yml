@@ -60,6 +60,11 @@ on:
         type: boolean
         default: false
         description: "If true, run UI tests"
+      ui_test_node:
+        required: false
+        type: string
+        default: "rl1"
+        description: "Run UI tests only on this node (avoids duplicate runs across distros since the Playwright container is the same)"
     secrets:
       do_token:
         required: true
@@ -67,7 +72,6 @@ on:
 env:
   TF_VAR_project: ${{ inputs.do_project }}
   TF_VAR_domain: ${{ inputs.do_domain }}
-
 
 jobs:
   info:
@@ -95,7 +99,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-          node: ${{ fromJSON(needs.info.outputs.nodes) }}
+        node: ${{ fromJSON(needs.info.outputs.nodes) }}
     steps:
       - id: create_status
         name: "Create commit status"
@@ -205,14 +209,14 @@ jobs:
         env:
           SSH_KEYFILE: ${{ github.workspace }}/key
           COREMODULES: ${{ inputs.coremodules }}
-          RUN_UI_TESTS: ${{ inputs.run_ui_tests }}
+          RUN_UI_TESTS: ${{ inputs.run_ui_tests && matrix.node == inputs.ui_test_node }}
       - name: "Save tests results"
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: tests-logs-${{ matrix.node }}
           path: |
-             ${{ github.workspace }}/module/${{ inputs.path }}/tests/outputs/
+            ${{ github.workspace }}/module/${{ inputs.path }}/tests/outputs/
       - id: update-status
         name: "Update commit status"
         if: always()
@@ -246,10 +250,10 @@ jobs:
             -f "description=Test on DigitalOcean (${{ matrix.node }})" \
             -f "context=continuous-integration/robotframework/${{ matrix.node }})"
       - name: "Setup CML"
-        if: inputs.run_ui_tests == true
+        if: inputs.run_ui_tests == true && matrix.node == inputs.ui_test_node
         run: npm install --location=global @dvcorg/cml
       - name: "Post screenshots to PR"
-        if: inputs.run_ui_tests == true
+        if: inputs.run_ui_tests == true && matrix.node == inputs.ui_test_node
         env:
           REPO_TOKEN: ${{ github.token }}
           MODULE_PATH: ${{ inputs.path }}

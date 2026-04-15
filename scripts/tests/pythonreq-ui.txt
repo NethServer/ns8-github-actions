@@ -1,2 +1,2 @@
 -r pythonreq.txt
-robotframework-browser
+robotframework-browser==19.14.2

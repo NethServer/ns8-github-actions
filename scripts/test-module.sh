@@ -11,7 +11,7 @@ set -e -a
 _script_start=$(date +%s)
 
 # Path to the SSH private key used to connect to the NS8 leader node
-SSH_KEYFILE=${SSH_KEYFILE:-$HOME/.ssh/id_rsa}
+SSH_KEYFILE=${SSH_KEYFILE:-$HOME/.ssh/id_ecdsa}
 
 # Mandatory positional arguments: the leader node hostname and the module image URL
 LEADER_NODE="${1:?missing LEADER_NODE argument}"
@@ -24,9 +24,6 @@ ssh_key="$(<$SSH_KEYFILE)"
 # The venv is stored in a named volume (rftest-cache) to cache pip/rfbrowser installs across runs
 venvroot=/usr/local/venv
 
-# Resolve the directory of this script to mount the shared test requirements inside the container
-script_dir="$(cd "$(dirname "$0")" && pwd)"
-
 echo "Test! RUN_UI_TESTS=${RUN_UI_TESTS} ////"
 
 # Select the container image and Python requirements file based on whether UI tests are enabled.
@@ -35,24 +32,22 @@ echo "Test! RUN_UI_TESTS=${RUN_UI_TESTS} ////"
 if [ "${RUN_UI_TESTS}" = "true" ]; then
     container_image="mcr.microsoft.com/playwright:v1.59.0-noble"
     container_shell="bash"
-    pythonreq="/srv/ns8-github-actions/tests/pythonreq-ui.txt"
+    packages="robotframework robotframework-sshlibrary robotframework-browser==19.14.2"
     cache_volume="rftest-cache-ui"
 else
     container_image="docker.io/python:3.11-alpine"
     container_shell="ash"
-    pythonreq="/srv/ns8-github-actions/tests/pythonreq.txt"
+    packages="robotframework robotframework-sshlibrary"
     cache_volume="rftest-cache"
 fi
 
 # Run the test suite inside a container.
 # Mounts:
-#   .              → /srv/source          (module source tree, including the tests/ directory)
-#   scripts/tests  → /srv/ns8-github-actions/tests  (shared Robot Framework helpers and requirements)
-#   rftest-cache   → ${venvroot}          (named volume to persist the Python venv across runs)
+#   .            → /srv/source  (module source tree, including the tests/ directory)
+#   rftest-cache → ${venvroot}  (named volume to persist the Python venv across runs)
 # Any extra arguments after IMAGE_URL are forwarded to the robot command inside the container.
 podman run -i \
     --volume=.:/srv/source:z \
-    --volume=${script_dir}/tests:/srv/ns8-github-actions/tests:z \
     --volume=${cache_volume}:${venvroot}:z \
     --replace --name=rftest \
     --env=ssh_key \
@@ -60,7 +55,7 @@ podman run -i \
     --env=LEADER_NODE \
     --env=IMAGE_URL \
     --env=RUN_UI_TESTS \
-    --env=pythonreq \
+    --env=packages \
     --env=_script_start \
     "${container_image}" \
     ${container_shell} -l -s -- "${@}" <<'EOF'
@@ -70,10 +65,11 @@ set -e
 echo "$ssh_key" > /tmp/idssh
 
 # Install the Python venv and Robot Framework dependencies if not already cached.
-# Cache is invalidated when the MD5 checksum of the requirements file changes, ensuring
-# that dependency updates are always picked up even on reused (self-hosted) runners.
+# Cache is invalidated when the package list changes, ensuring that dependency
+# updates are always picked up even on reused (self-hosted) runners.
+module_pythonreq="/srv/source/tests/pythonreq.txt"
 pythonreq_checksum_file="${venvroot}/.pythonreq.md5"
-pythonreq_current_checksum=$(md5sum "${pythonreq}" | cut -d' ' -f1)
+pythonreq_current_checksum=$(echo "${packages}" | cat - "${module_pythonreq}" 2>/dev/null | md5sum | cut -d' ' -f1)
 pythonreq_cached_checksum=$(cat "${pythonreq_checksum_file}" 2>/dev/null || true)
 
 if [ ! -x "${venvroot}/bin/robot" ] || [ "${pythonreq_current_checksum}" != "${pythonreq_cached_checksum}" ] ; then
@@ -86,7 +82,8 @@ if [ ! -x "${venvroot}/bin/robot" ] || [ "${pythonreq_current_checksum}" != "${p
         # Alpine image already has Python; --upgrade refreshes pip/setuptools in-place
         python3 -mvenv "${venvroot}" --upgrade
     fi
-    ${venvroot}/bin/pip3 install -q -r "${pythonreq}"
+    ${venvroot}/bin/pip3 install -q ${packages}
+    [ -f "${module_pythonreq}" ] && ${venvroot}/bin/pip3 install -q -r "${module_pythonreq}"
     # Save the checksum so future runs can detect requirement changes
     echo "${pythonreq_current_checksum}" > "${pythonreq_checksum_file}"
     # Invalidate the rfbrowser sentinel so it is re-initialized with the new packages

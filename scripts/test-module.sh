@@ -30,6 +30,10 @@ echo "Test! RUN_UI_TESTS=${RUN_UI_TESTS} ////"
 # UI tests require the Playwright image (Debian-based, includes browser binaries).
 # Non-UI tests use a lightweight Alpine Python image.
 if [ "${RUN_UI_TESTS}" = "true" ]; then
+    # NOTE: the Playwright container image version and the robotframework-browser package
+    # version must be compatible with each other. If one is upgraded, the other must be
+    # upgraded accordingly. Each release notes the Playwright version it was tested with:
+    # https://github.com/MarketSquare/robotframework-browser/releases
     container_image="mcr.microsoft.com/playwright:v1.59.0-noble"
     container_shell="bash"
     packages="robotframework robotframework-sshlibrary robotframework-browser==19.14.2"
@@ -82,7 +86,9 @@ if [ ! -x "${venvroot}/bin/robot" ] || [ "${pythonreq_current_checksum}" != "${p
         # Alpine image already has Python; --upgrade refreshes pip/setuptools in-place
         python3 -mvenv "${venvroot}" --upgrade
     fi
+    # Install the Robot Framework packages
     ${venvroot}/bin/pip3 install -q ${packages}
+    # Install any module-specific Python requirements if present
     [ -f "${module_pythonreq}" ] && ${venvroot}/bin/pip3 install -q -r "${module_pythonreq}"
     # Save the checksum so future runs can detect requirement changes
     echo "${pythonreq_current_checksum}" > "${pythonreq_checksum_file}"

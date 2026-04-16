@@ -267,7 +267,7 @@ jobs:
             for f in "${screenshots[@]}"; do
               name=$(basename "${f%.*}")
               name="${name//_/ }"
-              echo "**${name^}**" >> comment.md
+              echo "**${name}**" >> comment.md
               echo "" >> comment.md
               echo "![$(basename "$f")]($f)" >> comment.md
               echo "" >> comment.md

@@ -64,7 +64,7 @@ jobs:
         }}
       args: ${{ format('ghcr.io/{0}/{1}:{2} -v SCENARIO:{3}', needs.module.outputs.owner, needs.module.outputs.name, needs.module.outputs.tag, matrix.scenario) }}
       repo_ref: ${{ needs.module.outputs.sha }}
-      # run_ui_tests: ${{ needs.detect_changes.outputs.ui_tests_needed == 'true' }} //// uncomment
+      # run_ui_tests: ${{ needs.check_ui_tests_needed.outputs.ui_tests_needed == 'true' }} //// uncomment
       run_ui_tests: true
       debug_shell: ${{ inputs.debug_shell }}
     secrets:

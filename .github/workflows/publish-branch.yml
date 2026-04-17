@@ -8,6 +8,16 @@ on:
         required: false
         default: 'ubuntu-latest'
         type: string
+      extra-cache-paths:
+        description: 'Additional file paths to cache between runs (multiline, one path per line)'
+        required: false
+        default: ''
+        type: string
+      extra-cache-key:
+        description: 'Cache key for the extra paths'
+        required: false
+        default: ''
+        type: string
     secrets:
       netrcb64:
         description: "Netrc Base64-encoded file content for authenticated downloads. Overrides netrc secret."
@@ -35,6 +45,11 @@ jobs:
         with:
           path: ui/node_modules
           key: "yarn-${{ hashFiles('ui/yarn.lock') }}"
+      - uses: actions/cache@v5
+        if: inputs.extra-cache-paths != ''
+        with:
+          path: ${{ inputs.extra-cache-paths }}
+          key: ${{ inputs.extra-cache-key }}
       - id: build
         run: |
           # Write .netrc file with the secret contents:

@@ -190,21 +190,18 @@ jobs:
             set -e -x
             create-cluster ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }}:55820 10.5.4.0/24 Nethesis,1234
           EOF
-      - name: "Resolve test script"
-        id: resolve_script
-        run: |
-          if [ -n "${{ inputs.script }}" ]; then
-            echo "Using custom script: ${{ inputs.script }} ////"
-            echo "path=${{ github.workspace }}/module/${{ inputs.path }}/${{ inputs.script }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "Using default script: ns8-github-actions/scripts/test-module.sh ////"
-            echo "path=${{ github.workspace }}/ns8-github-actions/scripts/test-module.sh" >> "$GITHUB_OUTPUT"
-          fi
       - name: "Run tests"
         id: run_tests
         run: |
-          echo "Running test script: ${{ steps.resolve_script.outputs.path }} ////"
-          bash "${{ steps.resolve_script.outputs.path }}" ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} ${{ inputs.args }}
+          if [ -n "${{ inputs.script }}" ]; then
+            echo "Using custom script: ${{ inputs.script }} ////"
+            script_path="${{ github.workspace }}/module/${{ inputs.path }}/${{ inputs.script }}"
+          else
+            echo "Using default script: ns8-github-actions/scripts/test-module.sh ////"
+            script_path="${{ github.workspace }}/ns8-github-actions/scripts/test-module.sh"
+          fi
+          echo "Running test script: $script_path ////"
+          bash "$script_path" ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} ${{ inputs.args }}
         working-directory: ${{ github.workspace }}/module/${{ inputs.path }}
         env:
           SSH_KEYFILE: ${{ github.workspace }}/key

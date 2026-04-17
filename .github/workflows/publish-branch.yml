@@ -55,7 +55,20 @@ jobs:
         env:
           KEY_FILE: ${{ inputs.extra-cache-key-file }}
           KEY_PREFIX: ${{ inputs.extra-cache-key-prefix }}
-        run: printf 'key=%s-%s\n' "$KEY_PREFIX" "$(sha256sum "$KEY_FILE" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ -z "${KEY_FILE// }" ]; then
+            hash='no-key-file'
+          elif [ ! -f "$KEY_FILE" ]; then
+            echo "::error::inputs.extra-cache-key-file was provided, but the file does not exist or is not a regular file: $KEY_FILE"
+            exit 1
+          else
+            hash=$(sha256sum "$KEY_FILE" | awk '{print $1}')
+          fi
+          if [ -z "$KEY_PREFIX" ]; then
+            echo "key=${hash}" >> "$GITHUB_OUTPUT"
+          else
+            echo "key=${KEY_PREFIX}-${hash}" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/cache@v5
         if: inputs.extra-cache-paths != ''
         with:

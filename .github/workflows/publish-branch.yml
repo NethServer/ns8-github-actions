@@ -55,7 +55,7 @@ jobs:
         env:
           KEY_FILE: ${{ inputs.extra-cache-key-file }}
           KEY_PREFIX: ${{ inputs.extra-cache-key-prefix }}
-        run: echo "key=${KEY_PREFIX}-$(sha256sum "${KEY_FILE}" | awk '{print $1}')" >> $GITHUB_OUTPUT
+        run: printf 'key=%s-%s\n' "$KEY_PREFIX" "$(sha256sum "$KEY_FILE" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v5
         if: inputs.extra-cache-paths != ''
         with:

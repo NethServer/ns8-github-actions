@@ -10,10 +10,6 @@ set -e -a
 # ////
 _script_start=$(date +%s)
 
-# Resolve the directory containing this script so volume mounts are correct
-# regardless of the working directory from which the script is invoked.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Path to the SSH private key used to connect to the NS8 leader node
 SSH_KEYFILE=${SSH_KEYFILE:-$HOME/.ssh/id_ecdsa}
 
@@ -25,11 +21,9 @@ LEADER_NODE="${1:?missing LEADER_NODE argument}"
 IMAGE_URL="${2:-}"
 if [ -n "${IMAGE_URL}" ]; then
     mode="module"
-    source_dir="."
     shift 2
 else
     mode="core"
-    source_dir="${SCRIPT_DIR}"
     shift 1
 fi
 
@@ -60,12 +54,13 @@ fi
 
 # Run the test suite inside a container.
 # Mounts:
-#   source_dir   → /srv/source  (source tree, including the tests/ directory)
+#   .            → /srv/source  (source tree, including the tests/ directory)
 #   rftest-cache → ${venvroot}  (named volume to persist the Python venv across runs)
 # Any extra arguments are forwarded to the robot command inside the container.
+# The caller must cd to the appropriate source tree before running this script.
 podman run -i \
     $( [ "${mode}" = "core" ] && echo --network=host ) \
-    --volume="${source_dir}":/srv/source:z \
+    --volume=.:/srv/source:z \
     --volume=${cache_volume}:${venvroot} \
     --replace --name=rftest \
     --env=ssh_key \

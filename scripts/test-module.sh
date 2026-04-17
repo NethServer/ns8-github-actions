@@ -10,13 +10,28 @@ set -e -a
 # ////
 _script_start=$(date +%s)
 
+# Resolve the directory containing this script so volume mounts are correct
+# regardless of the working directory from which the script is invoked.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Path to the SSH private key used to connect to the NS8 leader node
 SSH_KEYFILE=${SSH_KEYFILE:-$HOME/.ssh/id_ecdsa}
 
-# Mandatory positional arguments: the leader node hostname and the module image URL
+# Mandatory first argument: the leader node hostname
 LEADER_NODE="${1:?missing LEADER_NODE argument}"
-IMAGE_URL="${2:?missing IMAGE_URL argument}"
-shift 2
+# Optional second argument: the module image URL.
+# If omitted, the script runs in "core" mode (testing ns8-core itself).
+# If provided, the script runs in "module" mode (testing a module).
+IMAGE_URL="${2:-}"
+if [ -n "${IMAGE_URL}" ]; then
+    mode="module"
+    source_dir="."
+    shift 2
+else
+    mode="core"
+    source_dir="${SCRIPT_DIR}"
+    shift 1
+fi
 
 # Read SSH key contents so they can be injected into the container via an env var
 ssh_key="$(<$SSH_KEYFILE)"
@@ -45,18 +60,21 @@ fi
 
 # Run the test suite inside a container.
 # Mounts:
-#   .            → /srv/source  (module source tree, including the tests/ directory)
+#   source_dir   → /srv/source  (source tree, including the tests/ directory)
 #   rftest-cache → ${venvroot}  (named volume to persist the Python venv across runs)
-# Any extra arguments after IMAGE_URL are forwarded to the robot command inside the container.
+# Any extra arguments are forwarded to the robot command inside the container.
 podman run -i \
-    --volume=.:/srv/source:z \
+    $( [ "${mode}" = "core" ] && echo --network=host ) \
+    --volume="${source_dir}":/srv/source:z \
     --volume=${cache_volume}:${venvroot}:z \
     --replace --name=rftest \
     --env=ssh_key \
     --env=venvroot \
     --env=LEADER_NODE \
     --env=IMAGE_URL \
+    --env=COREMODULES \
     --env=RUN_UI_TESTS \
+    --env=mode \
     --env=packages \
     --env=_script_start \
     "${container_image}" \
@@ -108,14 +126,15 @@ else
     ui_tag_filter="--exclude ui"
 fi
 
-echo "DEBUG: $(( $(date +%s) - _script_start ))s elapsed from script start to robot launch ////"
+echo "DEBUG[${mode}]: $(( $(date +%s) - _script_start ))s elapsed from script start to robot launch ///"
 
 exec ${venvroot}/bin/robot \
     -v NODE_ADDR:${LEADER_NODE} \
-    -v IMAGE_URL:${IMAGE_URL} \
+    $( [ "${mode}" = "module" ] && echo "-v IMAGE_URL:${IMAGE_URL}" ) \
+    $( [ "${mode}" = "core" ] && [ -n "${COREMODULES}" ] && echo "-v COREMODULES:${COREMODULES}" ) \
     -v SSH_KEYFILE:/tmp/idssh \
     -v RUN_UI_TESTS:${RUN_UI_TESTS} \
-    --name test-ns8-module \
+    --name test-${mode} \
     --skiponfailure unstable \
     ${ui_tag_filter} \
     -d tests/outputs "${@}" tests/

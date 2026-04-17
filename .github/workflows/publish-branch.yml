@@ -13,8 +13,13 @@ on:
         required: false
         default: ''
         type: string
-      extra-cache-key:
-        description: 'Cache key for the extra paths'
+      extra-cache-key-prefix:
+        description: 'Prefix for the extra cache key (e.g. "maven-build")'
+        required: false
+        default: ''
+        type: string
+      extra-cache-key-file:
+        description: 'File to hash to generate the extra cache key (e.g. "webtop5-build/VERSION")'
         required: false
         default: ''
         type: string
@@ -45,11 +50,17 @@ jobs:
         with:
           path: ui/node_modules
           key: "yarn-${{ hashFiles('ui/yarn.lock') }}"
+      - id: extra-cache-key
+        if: inputs.extra-cache-paths != ''
+        env:
+          KEY_FILE: ${{ inputs.extra-cache-key-file }}
+          KEY_PREFIX: ${{ inputs.extra-cache-key-prefix }}
+        run: echo "key=${KEY_PREFIX}-$(sha256sum "${KEY_FILE}" | awk '{print $1}')" >> $GITHUB_OUTPUT
       - uses: actions/cache@v5
         if: inputs.extra-cache-paths != ''
         with:
           path: ${{ inputs.extra-cache-paths }}
-          key: ${{ inputs.extra-cache-key }}
+          key: ${{ steps.extra-cache-key.outputs.key }}
       - id: build
         run: |
           # Write .netrc file with the secret contents:

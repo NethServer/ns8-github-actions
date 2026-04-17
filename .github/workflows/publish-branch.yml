@@ -14,12 +14,12 @@ on:
         default: ''
         type: string
       extra-cache-key-prefix:
-        description: 'Prefix for the extra cache key (e.g. "maven-build")'
+        description: 'Prefix string for the extra cache key'
         required: false
         default: ''
         type: string
       extra-cache-key-file:
-        description: 'File to hash to generate the extra cache key (e.g. "webtop5-build/VERSION")'
+        description: 'File whose content is hashed to generate the extra cache key. A version file is a good candidate.'
         required: false
         default: ''
         type: string

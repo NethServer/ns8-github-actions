@@ -66,7 +66,7 @@ fi
 podman run -i \
     $( [ "${mode}" = "core" ] && echo --network=host ) \
     --volume="${source_dir}":/srv/source:z \
-    --volume=${cache_volume}:${venvroot}:z \
+    --volume=${cache_volume}:${venvroot} \
     --replace --name=rftest \
     --env=ssh_key \
     --env=venvroot \

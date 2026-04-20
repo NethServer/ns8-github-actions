@@ -7,9 +7,6 @@
 
 set -e -a
 
-# ////
-_script_start=$(date +%s)
-
 # Path to the SSH private key used to connect to the NS8 leader node
 SSH_KEYFILE=${SSH_KEYFILE:-$HOME/.ssh/id_ecdsa}
 
@@ -32,8 +29,6 @@ ssh_key="$(<$SSH_KEYFILE)"
 
 # The venv is stored in a named volume (rftest-cache) to cache pip/rfbrowser installs across runs
 venvroot=/usr/local/venv
-
-echo "Test! RUN_UI_TESTS=${RUN_UI_TESTS} ////"
 
 # Select the container image and Python packages based on whether UI tests are enabled.
 # UI tests require the Playwright image (Debian-based, includes browser binaries).
@@ -75,7 +70,6 @@ podman run -i \
     --env=RUN_UI_TESTS \
     --env=mode \
     --env=packages \
-    --env=_script_start \
     "${container_image}" \
     bash -l -s -- "${@}" <<'EOF'
 set -e
@@ -124,8 +118,6 @@ if [ "${RUN_UI_TESTS}" = "true" ]; then
 else
     ui_tag_filter="--exclude ui"
 fi
-
-echo "DEBUG[${mode}]: $(( $(date +%s) - _script_start ))s elapsed from script start to robot launch ///"
 
 robot_vargs=()
 if [ "${mode}" = "module" ]; then

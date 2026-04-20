@@ -73,4 +73,3 @@ jobs:
           fi
 
           echo "ui_tests_needed=$should_run_ui_tests" >> "$GITHUB_OUTPUT"
-          echo "//// branch=$branch_name has_ui_changes=$has_ui_changes is_renovate=$is_renovate strategy=$ui_tests_strategy ui_tests_needed=$should_run_ui_tests"

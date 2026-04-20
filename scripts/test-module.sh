@@ -58,8 +58,12 @@ fi
 #   rftest-cache → ${venvroot}  (named volume to persist the Python venv across runs)
 # Any extra arguments are forwarded to the robot command inside the container.
 # The caller must cd to the appropriate source tree before running this script.
+podman_extra_args=()
+if [ "${mode}" = "core" ]; then
+    podman_extra_args+=(--network=host)
+fi
 podman run -i \
-    $( [ "${mode}" = "core" ] && echo --network=host ) \
+    "${podman_extra_args[@]}" \
     --volume=.:/srv/source:z \
     --volume=${cache_volume}:${venvroot} \
     --replace --name=rftest \
@@ -123,10 +127,17 @@ fi
 
 echo "DEBUG[${mode}]: $(( $(date +%s) - _script_start ))s elapsed from script start to robot launch ///"
 
+robot_vargs=()
+if [ "${mode}" = "module" ]; then
+    robot_vargs+=(-v "IMAGE_URL:${IMAGE_URL}")
+fi
+if [ "${mode}" = "core" ] && [ -n "${COREMODULES}" ]; then
+    robot_vargs+=(-v "COREMODULES:${COREMODULES}")
+fi
+
 exec ${venvroot}/bin/robot \
     -v NODE_ADDR:${LEADER_NODE} \
-    $( [ "${mode}" = "module" ] && echo "-v IMAGE_URL:${IMAGE_URL}" ) \
-    $( [ "${mode}" = "core" ] && [ -n "${COREMODULES}" ] && echo "-v COREMODULES:${COREMODULES}" ) \
+    "${robot_vargs[@]}" \
     -v SSH_KEYFILE:/tmp/idssh \
     -v RUN_UI_TESTS:${RUN_UI_TESTS} \
     --name test-${mode} \

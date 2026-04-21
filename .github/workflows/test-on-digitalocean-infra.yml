@@ -92,6 +92,39 @@ jobs:
       matrix:
           node: ${{ fromJSON(needs.info.outputs.nodes) }}
     steps:
+      - id: pr_context
+        name: "Resolve PR context and status SHA"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status_sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          pr_number=""
+          branch_name="${{ github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}"
+
+          if [ -n "$branch_name" ]; then
+            head_ref="${{ github.repository_owner }}:$branch_name"
+            pr_number=$(gh api \
+              --method GET \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              /repos/${{ github.repository }}/pulls \
+              -f "state=open" \
+              -f "head=${head_ref}" \
+              -f "per_page=1" \
+              --jq '.[0].number // empty')
+
+            if [ -n "$pr_number" ]; then
+              status_sha=$(gh api \
+                --method GET \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                /repos/${{ github.repository }}/pulls/${pr_number} \
+                --jq '.head.sha')
+            fi
+          fi
+
+          echo "number=${pr_number}" >> $GITHUB_OUTPUT
+          echo "status_sha=${status_sha}" >> $GITHUB_OUTPUT
       - id: create_status
         name: "Create commit status"
         env:
@@ -107,7 +140,7 @@ jobs:
             --method POST \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            /repos/${{ github.repository }}/statuses/${{ github.event.workflow_run.head_sha || github.sha}} \
+            /repos/${{ github.repository }}/statuses/${{ steps.pr_context.outputs.status_sha }} \
             -f "state=pending" \
             -f "target_url=$status_page" \
             -f "description=Test on DigitalOcean (${{ matrix.node }})" \
@@ -214,7 +247,7 @@ jobs:
             --method POST \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            /repos/${{ github.repository }}/statuses/${{ github.event.workflow_run.head_sha || github.sha}} \
+            /repos/${{ github.repository }}/statuses/${{ steps.pr_context.outputs.status_sha }} \
             -f "state=$state" \
             -f "target_url=$status_page" \
             -f "description=Test on DigitalOcean (${{ matrix.node }})" \

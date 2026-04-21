@@ -16,7 +16,7 @@ on:
         description: "The git commit hash of the current module version"
         value: ${{ jobs.module.outputs.sha }}
       pull_request:
-        description: "The pull request number associated to the current branch, if any"
+        description: "The pull request number associated with the current branch, if any"
         value: ${{ jobs.module.outputs.pull_request }}
       short_sha:
         description: "First 8 chars of the commit hash"
@@ -90,7 +90,7 @@ jobs:
             pr_number="$(
               gh pr list \
                 --repo "${{ github.repository }}" \
-                --head "${{ github.repository_owner }}:${branch}" \
+                --head "${branch}" \
                 --state open \
                 --json number \
                 --jq '.[0].number // empty'

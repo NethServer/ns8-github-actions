@@ -113,7 +113,7 @@ test-ns8-module rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:latest --te
 ### How it works
 
 - When `RUN_UI_TESTS=true`, the script uses the [Microsoft Playwright](https://playwright.dev/) container image and the `robotframework-browser` library.
-- Otherwise, a lightweight `python:3.11-alpine` image is used.
+- Otherwise, a lightweight `docker.io/python:3.11-slim` image is used.
 - The Python venv is stored in a named volume (`rftest-cache` or `rftest-cache-ui`). It is invalidated automatically when the requirements file checksum changes.
 - Robot Framework variables passed to all tests:
   - `NODE_ADDR` — the leader node address

@@ -29,8 +29,6 @@ The venv is cached in a named volume so repeated runs are fast.
 
 Download the script, make it executable, and place it in your `PATH`:
 
-<!-- fix curl url //// -->
-
 ```bash
 curl -o test-ns8-module https://raw.githubusercontent.com/NethServer/ns8-github-actions/refs/heads/v1/scripts/test-module.sh
 chmod +x test-ns8-module

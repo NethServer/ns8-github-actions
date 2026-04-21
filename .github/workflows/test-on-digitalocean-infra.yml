@@ -242,7 +242,7 @@ jobs:
             -f "state=$state" \
             -f "target_url=$status_page" \
             -f "description=Test on DigitalOcean (${{ matrix.node }})" \
-            -f "context=continuous-integration/robotframework/${{ matrix.node }})"
+            -f "context=continuous-integration/robotframework/${{ matrix.node }}"
       - name: "Setup CML"
         if: inputs.run_ui_tests == true && matrix.node == inputs.ui_test_node
         run: npm install --location=global @dvcorg/cml

@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       ui_tests_strategy:
-        description: "When to run UI tests: on_ui_change, on_renovate_ui_change, never"
+        description: "When to run UI tests: always, on_ui_change, on_renovate_ui_change, never"
         required: false
         type: string
         default: on_renovate_ui_change
@@ -58,7 +58,9 @@ jobs:
           fi
 
           ui_tests_strategy="${{ inputs.ui_tests_strategy }}"
-          if [[ "$ui_tests_strategy" == "never" ]]; then
+          if [[ "$ui_tests_strategy" == "always" ]]; then
+            should_run_ui_tests=true
+          elif [[ "$ui_tests_strategy" == "never" ]]; then
             should_run_ui_tests=false
           elif [[ "$ui_tests_strategy" == "on_ui_change" ]]; then
             should_run_ui_tests=$has_ui_changes

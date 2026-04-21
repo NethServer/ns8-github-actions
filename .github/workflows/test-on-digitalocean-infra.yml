@@ -271,7 +271,6 @@ jobs:
               --jq '.[0].number' 2>/dev/null || echo "")
           fi
 
-          echo "PR number: $pr_number ////"
           echo "number=$pr_number" >> $GITHUB_OUTPUT
       - name: "Post screenshots to PR"
         if: inputs.run_ui_tests == true && matrix.node == inputs.ui_test_node && steps.find_pr.outputs.number != ''

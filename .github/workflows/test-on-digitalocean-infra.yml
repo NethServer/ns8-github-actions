@@ -149,7 +149,7 @@ jobs:
             --method POST \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            /repos/${{ github.repository }}/statuses/${{ steps.pr_context.outputs.status_sha }} \
+            /repos/${{ github.repository }}/statuses/${{ steps.pr_context.outputs.status_sha || github.event.workflow_run.head_sha || github.sha }} \
             -f "state=pending" \
             -f "target_url=$status_page" \
             -f "description=Test on DigitalOcean (${{ matrix.node }})" \
@@ -256,7 +256,7 @@ jobs:
             --method POST \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            /repos/${{ github.repository }}/statuses/${{ steps.pr_context.outputs.status_sha }} \
+            /repos/${{ github.repository }}/statuses/${{ steps.pr_context.outputs.status_sha || github.event.workflow_run.head_sha || github.sha }} \
             -f "state=$state" \
             -f "target_url=$status_page" \
             -f "description=Test on DigitalOcean (${{ matrix.node }})" \

@@ -90,6 +90,11 @@ jobs:
         id: short_sha
         run: echo "value=$( echo ${{ inputs.repo_ref }} | cut -c1-8 )" >> $GITHUB_OUTPUT
   test-module:
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      statuses: write
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref_name }}-${{ matrix.node }}
       cancel-in-progress: true

@@ -251,11 +251,34 @@ jobs:
       - name: "Setup CML"
         if: inputs.run_ui_tests == true && matrix.node == inputs.ui_test_node
         run: npm install --location=global @dvcorg/cml
-      - name: "Post screenshots to PR"
+      - name: "Find PR number"
         if: inputs.run_ui_tests == true && matrix.node == inputs.ui_test_node
+        id: find_pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Try to get PR from event context first (for PR triggers)
+          pr_number="${{ github.event.pull_request.number }}"
+
+          if [ -z "$pr_number" ]; then
+            # For workflow_dispatch, find the PR by branch or commit
+            branch="${{ github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}"
+            pr_number=$(gh pr list \
+              --repo "${{ github.repository }}" \
+              --head "$branch" \
+              --state open \
+              --json number \
+              --jq '.[0].number' 2>/dev/null || echo "")
+          fi
+
+          echo "PR number: $pr_number ////"
+          echo "number=$pr_number" >> $GITHUB_OUTPUT
+      - name: "Post screenshots to PR"
+        if: inputs.run_ui_tests == true && matrix.node == inputs.ui_test_node && steps.find_pr.outputs.number != ''
         env:
           REPO_TOKEN: ${{ github.token }}
           MODULE_PATH: ${{ inputs.path }}
+          PR_NUMBER: ${{ steps.find_pr.outputs.number }}
         run: |
           output_dir="${{ github.workspace }}/module${MODULE_PATH:+/$MODULE_PATH}/tests/outputs"
           echo "### UI Test Screenshots \`${{ matrix.node }}\`" >> comment.md
@@ -272,7 +295,7 @@ jobs:
               echo "" >> comment.md
             done
           fi
-          cml comment create --target=pr --repo="https://github.com/${{ github.repository }}" comment.md
+          cml comment create --target=pr/$PR_NUMBER --repo="https://github.com/${{ github.repository }}" comment.md
       - name: "Debugging with tmate"
         if: ${{ inputs.debug_shell == true && ! cancelled() && always() }}
         uses: mxschmitt/action-tmate@v3

@@ -15,6 +15,9 @@ on:
       sha:
         description: "The git commit hash of the current module version"
         value: ${{ jobs.module.outputs.sha }}
+      pull_request:
+        description: "The pull request number associated to the current branch, if any"
+        value: ${{ jobs.module.outputs.pull_request }}
       short_sha:
         description: "First 8 chars of the commit hash"
         value: ${{ jobs.module.outputs.short_sha }}
@@ -37,6 +40,7 @@ jobs:
       name: ${{ steps.name.outputs.name }}
       tag: ${{ steps.tag.outputs.name }}
       sha: ${{ steps.sha.outputs.value }}
+      pull_request: ${{ steps.pull_request.outputs.number }}
       short_sha: ${{ steps.short_sha.outputs.value }}
       image: ${{ steps.image.outputs.name }}
       images: ${{ steps.images.outputs.list }}
@@ -71,6 +75,29 @@ jobs:
         run: |
           sha=${{ github.event.workflow_run.head_sha || github.sha }}
           echo "value=${sha}" >> $GITHUB_OUTPUT
+      - id: pull_request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr_number=""
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            pr_number="${{ github.event.pull_request.number }}"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            pr_number="${{ github.event.workflow_run.pull_requests[0].number }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            branch="${{ github.ref_name }}"
+            pr_number="$(
+              gh pr list \
+                --repo "${{ github.repository }}" \
+                --head "${{ github.repository_owner }}:${branch}" \
+                --state open \
+                --json number \
+                --jq '.[0].number // empty'
+            )"
+          fi
+
+          echo "number=${pr_number}" >> "$GITHUB_OUTPUT"
       - id: short_sha
         run: echo "value=$( echo ${{ steps.sha.outputs.value }} | cut -c1-8 )" >> $GITHUB_OUTPUT
       - id: image

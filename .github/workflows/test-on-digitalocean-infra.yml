@@ -5,7 +5,7 @@ on:
     inputs:
       script:
         required: false
-        description: "Name of the script to execute. If empty, the default script from ns8-github-actions is used."
+        description: "Bash script that runs the test, relative to working directory (see also path input parameter). If empty, the default script from ns8-github-actions is used."
         type: string
         default: ""
       path:

@@ -17,7 +17,7 @@ Reusable automation scripts for [NethServer 8](https://github.com/NethServer/ns8
 
 ## Running tests locally
 
-The `test-ns8-module` script runs any NS8 module's `tests/` directory with Robot Framework inside a Podman container, directly from your workstation against a live NS8 cluster.
+The `run-ns8-tests` script runs the `tests/` directory of **ns8-core** or any **NS8 module** with Robot Framework inside a Podman container, directly from your workstation against a live NS8 cluster.
 The venv is cached in a named volume so repeated runs are fast.
 
 ### Requirements
@@ -30,24 +30,30 @@ The venv is cached in a named volume so repeated runs are fast.
 Download the script, make it executable, and place it in your `PATH`:
 
 ```bash
-curl -o test-ns8-module https://raw.githubusercontent.com/NethServer/ns8-github-actions/refs/heads/v1/scripts/test-module.sh
-chmod +x test-ns8-module
-sudo mv test-ns8-module /usr/local/bin/
+curl -o /tmp/run-ns8-tests https://raw.githubusercontent.com/NethServer/ns8-github-actions/refs/heads/v1/scripts/test-module.sh
+install -m 0755 -Z /tmp/run-ns8-tests ~/.local/bin
 ```
 
 ### Usage
 
-Enter the NS8 module directory and run the script:
+**Testing ns8-core** — enter the `core/` subdirectory of the ns8-core repository:
+
+```bash
+cd /path/to/ns8-core/core
+run-ns8-tests <LEADER_NODE> [robot options...]
+```
+
+**Testing a module** — enter the module's repository root:
 
 ```bash
 cd /path/to/ns8-<module>
-test-ns8-module <LEADER_NODE> <IMAGE_URL> [robot options...]
+run-ns8-tests <LEADER_NODE> <IMAGE_URL> [robot options...]
 ```
 
 | Argument | Description |
 |---|---|
 | `LEADER_NODE` | Hostname or IP of the NS8 leader node |
-| `IMAGE_URL` | Container image URL for the module under test |
+| `IMAGE_URL` | Container image URL for the module under test *(module only, not used for core)* |
 | `[robot options...]` | Any extra arguments forwarded to the `robot` command |
 
 ### Environment variables
@@ -56,56 +62,82 @@ test-ns8-module <LEADER_NODE> <IMAGE_URL> [robot options...]
 |---|---|---|
 | `SSH_KEYFILE` | `~/.ssh/id_ecdsa` | Path to the SSH private key |
 | `RUN_UI_TESTS` | _(unset)_ | Set to `true` to enable UI/browser tests |
+| `COREMODULES` | _(unset)_ | Space- or comma-separated list of core module images to install during cluster setup *(core only)* |
 
 ### Examples
+
+#### ns8-core
+
+Basic run:
+
+```bash
+cd ~/git/ns8-core/core
+run-ns8-tests rl1.leader.cluster0.test.org
+```
+
+Skip installation and uninstallation tests (useful when the cluster is already set up):
+
+```bash
+cd ~/git/ns8-core/core
+run-ns8-tests rl1.leader.cluster0.test.org --exclude install --exclude uninstall
+```
+
+With specific core modules and a custom SSH key:
+
+```bash
+cd ~/git/ns8-core/core
+SSH_KEYFILE=~/.ssh/id_ecdsa COREMODULES="ghcr.io/nethserver/traefik:feat-7544" run-ns8-tests rl1.leader.cluster0.test.org
+```
+
+#### NS8 modules
 
 Basic run:
 
 ```bash
 cd ~/git/ns8-mail
-test-ns8-module rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:bug-6977
+run-ns8-tests rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:bug-6977
 ```
 
 Using a custom SSH key:
 
 ```bash
 cd ~/git/ns8-mail
-SSH_KEYFILE=~/.ssh/id_ecdsa test-ns8-module rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:bug-6977
+SSH_KEYFILE=~/.ssh/id_ecdsa run-ns8-tests rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:bug-6977
 ```
 
 With UI tests enabled:
 
 ```bash
 cd ~/git/ns8-nextcloud
-RUN_UI_TESTS=true test-ns8-module rl1.leader.cluster0.test.org ghcr.io/nethserver/nextcloud:latest
+RUN_UI_TESTS=true run-ns8-tests rl1.leader.cluster0.test.org ghcr.io/nethserver/nextcloud:latest
 ```
 
 With UI tests and a custom SSH key:
 
 ```bash
 cd ~/git/ns8-nextcloud
-SSH_KEYFILE=~/.ssh/id_ecdsa RUN_UI_TESTS=true test-ns8-module rl1.leader.cluster0.test.org ghcr.io/nethserver/nextcloud:latest
+SSH_KEYFILE=~/.ssh/id_ecdsa RUN_UI_TESTS=true run-ns8-tests rl1.leader.cluster0.test.org ghcr.io/nethserver/nextcloud:latest
 ```
 
 Passing extra Robot Framework options (e.g. run a single test suite):
 
 ```bash
 cd ~/git/ns8-mail
-test-ns8-module rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:latest --suite "Sending mail"
+run-ns8-tests rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:latest --suite "Sending mail"
 ```
 
 Run only tests with a specific tag:
 
 ```bash
 cd ~/git/ns8-mail
-test-ns8-module rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:latest --include smoke
+run-ns8-tests rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:latest --include smoke
 ```
 
 Run a single test by name:
 
 ```bash
 cd ~/git/ns8-mail
-test-ns8-module rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:latest --test "Send an email"
+run-ns8-tests rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:latest --test "Send an email"
 ```
 
 ### How it works
@@ -115,9 +147,10 @@ test-ns8-module rl1.leader.cluster0.test.org ghcr.io/nethserver/mail:latest --te
 - The Python venv is stored in a named volume (`rftest-cache` or `rftest-cache-ui`). It is invalidated automatically when the requirements file checksum changes.
 - Robot Framework variables passed to all tests:
   - `NODE_ADDR` — the leader node address
-  - `IMAGE_URL` — the module image URL
+  - `IMAGE_URL` — the module image URL *(module tests only)*
   - `SSH_KEYFILE` — path to the SSH key inside the container (`/tmp/idssh`)
   - `RUN_UI_TESTS` — whether UI tests are active
+  - `COREMODULES` — space- or comma-separated list of core module images to install during cluster setup *(core tests only)*
 - Tests tagged `unstable` are skipped on failure (`--skiponfailure unstable`).
 - UI tests must be tagged `ui`; they are excluded automatically when `RUN_UI_TESTS` is not `true`.
 

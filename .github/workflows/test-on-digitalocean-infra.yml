@@ -11,7 +11,7 @@ on:
       path:
         required: false
         type: string
-        description: "Subdirectory of the module repository to use as working directory when running the test script"
+        description: "Subdirectory of the module repository to use as the working directory when running the test Bash script. A tests/ directory containing Robot Framework tests is expected inside it."
       args:
         required: false
         type: string

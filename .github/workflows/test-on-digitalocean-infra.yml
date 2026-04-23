@@ -5,13 +5,13 @@ on:
     inputs:
       script:
         required: false
-        description: "Name of the script to execute"
+        description: "Bash script that runs the test, relative to working directory (see also path input parameter). If empty, the default script from ns8-github-actions is used."
         type: string
-        default: test-module.sh
+        default: ""
       path:
         required: false
         type: string
-        description: "Name of the script to execute, default `test-module.sh`"
+        description: "Subdirectory of the module repository to use as the working directory when running the test Bash script. A tests/ directory containing Robot Framework tests is expected inside it."
       args:
         required: false
         type: string
@@ -55,6 +55,16 @@ on:
         type: string
         default: "ci.nethserver.net"
         description: "DigitalOcean domain where to create the DNS records"
+      run_ui_tests:
+        required: false
+        type: boolean
+        default: false
+        description: "If true, run UI tests"
+      ui_test_node:
+        required: false
+        type: string
+        default: "rl1"
+        description: "Run UI tests only on this node (avoids duplicate runs across distros since the Playwright container is the same)"
     secrets:
       do_token:
         required: true
@@ -62,7 +72,6 @@ on:
 env:
   TF_VAR_project: ${{ inputs.do_project }}
   TF_VAR_domain: ${{ inputs.do_domain }}
-
 
 jobs:
   info:
@@ -81,6 +90,11 @@ jobs:
         id: short_sha
         run: echo "value=$( echo ${{ inputs.repo_ref }} | cut -c1-8 )" >> $GITHUB_OUTPUT
   test-module:
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      statuses: write
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref_name }}-${{ matrix.node }}
       cancel-in-progress: true
@@ -90,7 +104,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-          node: ${{ fromJSON(needs.info.outputs.nodes) }}
+        node: ${{ fromJSON(needs.info.outputs.nodes) }}
     steps:
       - id: create_status
         name: "Create commit status"
@@ -117,6 +131,15 @@ jobs:
         with:
           ref: ${{ inputs.repo_ref }}
           path: module
+      - name: "Get ns8-github-actions ref"
+        id: ns8_ga_ref
+        run: echo "ref=$(echo '${{ github.workflow_ref }}' | cut -d'@' -f2)" >> $GITHUB_OUTPUT
+      - name: "Checkout ns8-github-actions"
+        uses: actions/checkout@v6
+        with:
+          repository: NethServer/ns8-github-actions
+          ref: ${{ steps.ns8_ga_ref.outputs.ref }}
+          path: ns8-github-actions
       - name: "Checkout the infrastructure repository"
         uses: actions/checkout@v6
         with:
@@ -175,18 +198,24 @@ jobs:
       - name: "Run tests"
         id: run_tests
         run: |
-          ./${{ inputs.script }} ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} ${{ inputs.args }}
+          if [ -n "${{ inputs.script }}" ]; then
+            script_path="${{ github.workspace }}/module/${{ inputs.path }}/${{ inputs.script }}"
+          else
+            script_path="${{ github.workspace }}/ns8-github-actions/scripts/test-module.sh"
+          fi
+          bash "$script_path" ${{ matrix.node }}.leader.${{ matrix.node }}-${{ needs.info.outputs.short_sha }}.${{ env.TF_VAR_domain }} ${{ inputs.args }}
         working-directory: ${{ github.workspace }}/module/${{ inputs.path }}
         env:
           SSH_KEYFILE: ${{ github.workspace }}/key
           COREMODULES: ${{ inputs.coremodules }}
+          RUN_UI_TESTS: ${{ inputs.run_ui_tests && matrix.node == inputs.ui_test_node }}
       - name: "Save tests results"
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: tests-logs-${{ matrix.node }}
           path: |
-             ${{ github.workspace }}/module/${{ inputs.path }}/tests/outputs/
+            ${{ github.workspace }}/module/${{ inputs.path }}/tests/outputs/
       - id: update-status
         name: "Update commit status"
         if: always()
@@ -218,7 +247,54 @@ jobs:
             -f "state=$state" \
             -f "target_url=$status_page" \
             -f "description=Test on DigitalOcean (${{ matrix.node }})" \
-            -f "context=continuous-integration/robotframework/${{ matrix.node }})"
+            -f "context=continuous-integration/robotframework/${{ matrix.node }}"
+      - name: "Setup CML"
+        if: inputs.run_ui_tests == true && matrix.node == inputs.ui_test_node
+        run: npm install --location=global @dvcorg/cml
+      - name: "Find PR number"
+        if: inputs.run_ui_tests == true && matrix.node == inputs.ui_test_node
+        id: find_pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Try to get PR from event context first (for PR triggers)
+          pr_number="${{ github.event.pull_request.number }}"
+
+          if [ -z "$pr_number" ]; then
+            # For workflow_dispatch, find the PR by branch or commit
+            branch="${{ github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}"
+            pr_number=$(gh pr list \
+              --repo "${{ github.repository }}" \
+              --head "$branch" \
+              --state open \
+              --json number \
+              --jq '.[0].number' 2>/dev/null || echo "")
+          fi
+
+          echo "number=$pr_number" >> $GITHUB_OUTPUT
+      - name: "Post screenshots to PR"
+        if: inputs.run_ui_tests == true && matrix.node == inputs.ui_test_node && steps.find_pr.outputs.number != ''
+        env:
+          REPO_TOKEN: ${{ github.token }}
+          MODULE_PATH: ${{ inputs.path }}
+          PR_NUMBER: ${{ steps.find_pr.outputs.number }}
+        run: |
+          output_dir="${{ github.workspace }}/module${MODULE_PATH:+/$MODULE_PATH}/tests/outputs"
+          echo "### UI Test Screenshots \`${{ matrix.node }}\`" >> comment.md
+          mapfile -d '' screenshots < <(find "$output_dir" -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.gif' -o -iname '*.webp' \) -print0 2>/dev/null | sort -z)
+          if [ ${#screenshots[@]} -eq 0 ]; then
+            echo "No screenshots found in test outputs." >> comment.md
+          else
+            for f in "${screenshots[@]}"; do
+              name=$(basename "${f%.*}")
+              name="${name//_/ }"
+              echo "**${name}**" >> comment.md
+              echo "" >> comment.md
+              echo "![$(basename "$f")]($f)" >> comment.md
+              echo "" >> comment.md
+            done
+          fi
+          cml comment create --target=pr/$PR_NUMBER --repo="https://github.com/${{ github.repository }}" comment.md
       - name: "Debugging with tmate"
         if: ${{ inputs.debug_shell == true && ! cancelled() && always() }}
         uses: mxschmitt/action-tmate@v3

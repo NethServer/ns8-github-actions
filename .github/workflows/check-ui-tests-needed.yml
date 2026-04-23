@@ -1,0 +1,77 @@
+name: Check UI tests needed
+
+on:
+  workflow_call:
+    inputs:
+      ui_tests_strategy:
+        description: "When to run UI tests: always, on_ui_change, on_renovate_ui_change, never"
+        required: false
+        type: string
+        default: on_renovate_ui_change
+      head_sha:
+        description: "The commit SHA to checkout"
+        required: true
+        type: string
+      head_branch:
+        description: "The branch name to check for renovate"
+        required: true
+        type: string
+      ui_dir:
+        description: "The UI directory to watch for changes"
+        required: false
+        type: string
+        default: ui
+      build_script:
+        description: "The build script file to watch for changes (changes to this file may affect the UI)"
+        required: false
+        type: string
+        default: build-images.sh
+    outputs:
+      ui_tests_needed:
+        description: "Whether UI tests should run based on strategy and detected changes"
+        value: ${{ jobs.detect_changes.outputs.ui_tests_needed }}
+
+jobs:
+  detect_changes:
+    name: "Detect changes"
+    runs-on: ubuntu-latest
+    outputs:
+      ui_tests_needed: ${{ steps.changes.outputs.ui_tests_needed }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.head_sha }}
+          fetch-depth: 2
+      - id: changes
+        run: |
+          if git diff --name-only HEAD^ HEAD | grep -qE "^${{ inputs.ui_dir }}/|^${{ inputs.build_script }}$"; then
+            has_ui_changes=true
+          else
+            has_ui_changes=false
+          fi
+
+          branch_name="${{ inputs.head_branch }}"
+          if [[ "$branch_name" == renovate-* || "$branch_name" == renovate/* ]]; then
+            is_renovate=true
+          else
+            is_renovate=false
+          fi
+
+          ui_tests_strategy="${{ inputs.ui_tests_strategy }}"
+          if [[ "$ui_tests_strategy" == "always" ]]; then
+            should_run_ui_tests=true
+          elif [[ "$ui_tests_strategy" == "never" ]]; then
+            should_run_ui_tests=false
+          elif [[ "$ui_tests_strategy" == "on_ui_change" ]]; then
+            should_run_ui_tests=$has_ui_changes
+          elif [[ "$ui_tests_strategy" == "on_renovate_ui_change" ]]; then
+            if [[ "$has_ui_changes" == "true" && "$is_renovate" == "true" ]]; then
+              should_run_ui_tests=true
+            else
+              should_run_ui_tests=false
+            fi
+          else
+            should_run_ui_tests=false
+          fi
+
+          echo "ui_tests_needed=$should_run_ui_tests" >> "$GITHUB_OUTPUT"

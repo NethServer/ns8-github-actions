@@ -31,6 +31,7 @@ on:
 
 jobs:
   module:
+    name: "Get module info"
     runs-on: ubuntu-latest
     outputs:
       owner: ${{ steps.owner.outputs.name }}

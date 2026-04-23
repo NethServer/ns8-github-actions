@@ -1,0 +1,70 @@
+name: Test module
+
+on:
+  workflow_call:
+    inputs:
+      ui_tests_strategy:
+        description: "When to run UI tests: always, on_ui_change, on_renovate_ui_change, never"
+        required: false
+        type: string
+        default: on_renovate_ui_change
+      debug_shell:
+        description: "Debug shell"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      do_token:
+        required: true
+
+jobs:
+  module:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == '' }}
+    uses: ./.github/workflows/module-info.yml
+
+  chooser:
+    name: "Choose nodes"
+    runs-on: ubuntu-latest
+    outputs:
+      node_a: ${{ steps.pick.outputs.node_a }}
+      node_b: ${{ steps.pick.outputs.node_b }}
+    steps:
+      - id: pick
+        run: |
+          if (( $GITHUB_RUN_NUMBER % 2 )); then
+            echo "node_a=rl1" >> "$GITHUB_OUTPUT"
+            echo "node_b=dn1" >> "$GITHUB_OUTPUT"
+          else
+            echo "node_a=dn1" >> "$GITHUB_OUTPUT"
+            echo "node_b=rl1" >> "$GITHUB_OUTPUT"
+          fi
+
+  check_ui_tests_needed:
+    uses: ./.github/workflows/check-ui-tests-needed.yml
+    with:
+      ui_tests_strategy: ${{ inputs.ui_tests_strategy }}
+      head_sha: ${{ github.event.workflow_run.head_sha || github.sha }}
+      head_branch: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+
+  run_tests:
+    needs: [module, chooser, check_ui_tests_needed]
+    name: "Run tests"
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [install, update]
+    uses: ./.github/workflows/test-on-digitalocean-infra.yml
+    with:
+      coremodules: ${{ matrix.scenario == 'install' && format('ghcr.io/{0}/{1}:{2}', needs.module.outputs.owner, needs.module.outputs.name, needs.module.outputs.tag) || '' }}
+      leader_nodes: >-
+        ${{
+          matrix.scenario == 'install'
+          && needs.chooser.outputs.node_a
+          || needs.chooser.outputs.node_b
+        }}
+      args: ${{ format('ghcr.io/{0}/{1}:{2} -v SCENARIO:{3}', needs.module.outputs.owner, needs.module.outputs.name, needs.module.outputs.tag, matrix.scenario) }}
+      repo_ref: ${{ needs.module.outputs.sha }}
+      run_ui_tests: ${{ needs.check_ui_tests_needed.outputs.ui_tests_needed == 'true' }}
+      debug_shell: ${{ inputs.debug_shell }}
+    secrets:
+      do_token: ${{ secrets.do_token }}

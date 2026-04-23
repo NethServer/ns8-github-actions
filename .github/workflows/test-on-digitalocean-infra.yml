@@ -131,14 +131,11 @@ jobs:
         with:
           ref: ${{ inputs.repo_ref }}
           path: module
-      - name: "Get ns8-github-actions ref"
-        id: ns8_ga_ref
-        run: echo "ref=$(echo '${{ github.workflow_ref }}' | cut -d'@' -f2)" >> $GITHUB_OUTPUT
       - name: "Checkout ns8-github-actions"
         uses: actions/checkout@v6
         with:
           repository: NethServer/ns8-github-actions
-          ref: ${{ steps.ns8_ga_ref.outputs.ref }}
+          ref: v1
           path: ns8-github-actions
       - name: "Checkout the infrastructure repository"
         uses: actions/checkout@v6

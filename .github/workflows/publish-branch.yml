@@ -42,6 +42,14 @@ jobs:
           # Build the module images
           REPOBASE=${REPOBASE,,}
           export REPOBASE
+          # Sanitize tag syntax: slashes are not allowed
+          # Abort if IMAGETAG is unset or empty
+          : "${IMAGETAG:?}"
+          # Replace '/' with '-'
+          IMAGETAG=$(printf '%s' "${IMAGETAG}" | tr '/' '-')
+          # Make sanitized value available to build-images.sh and subsequent steps
+          export IMAGETAG
+          echo "IMAGETAG=${IMAGETAG}" >> "$GITHUB_ENV"
           bash build-images.sh
       - id: publish
         run: |
@@ -50,14 +58,11 @@ jobs:
           buildah login -u ${{ github.actor }} --password-stdin ghcr.io <<<"${{ secrets.GITHUB_TOKEN }}"
           images=(${{ steps.build.outputs.images }})
           urls=""
-          : "${IMAGETAG:?}"
-          # Sanitize tag syntax: slashes are not allowed
-          imagetag=$(printf '%s' "${IMAGETAG}" | tr '/' '-')
           for image in "${images[@]}" ; do
-            buildah push $image docker://${image}:${imagetag}
-            if [[ "${imagetag}" == "main" || "${imagetag}" == "master" ]]; then
+            buildah push $image docker://${image}:${IMAGETAG}
+            if [[ "${IMAGETAG}" == "main" || "${IMAGETAG}" == "master" ]]; then
                 buildah push $image docker://${image}:latest
             fi
-            urls="${image}:${imagetag} "$'\n'"${urls}"
+            urls="${image}:${IMAGETAG} "$'\n'"${urls}"
           done
           echo "::notice title=Image URLs::${urls}"

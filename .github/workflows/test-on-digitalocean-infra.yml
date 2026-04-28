@@ -125,7 +125,7 @@ jobs:
             -f "state=pending" \
             -f "target_url=$status_page" \
             -f "description=Test on DigitalOcean (${{ matrix.node }})" \
-            -f "context=continuous-integration/robotframework/${{ matrix.node }})"
+            -f "context=continuous-integration/robotframework/${{ matrix.node }}"
       - name: "Checkout the module repository"
         uses: actions/checkout@v6
         with:

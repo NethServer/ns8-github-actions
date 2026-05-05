@@ -8,6 +8,21 @@ on:
         required: false
         default: 'ubuntu-latest'
         type: string
+      extra-cache-paths:
+        description: 'Additional file paths to cache between runs (multiline, one path per line)'
+        required: false
+        default: ''
+        type: string
+      extra-cache-key-prefix:
+        description: 'Prefix string for the extra cache key'
+        required: false
+        default: ''
+        type: string
+      extra-cache-key-file:
+        description: 'File whose content is hashed to generate the extra cache key. A version file is a good candidate.'
+        required: false
+        default: ''
+        type: string
     secrets:
       netrcb64:
         description: "Netrc Base64-encoded file content for authenticated downloads. Overrides netrc secret."
@@ -35,6 +50,30 @@ jobs:
         with:
           path: ui/node_modules
           key: "yarn-${{ hashFiles('ui/yarn.lock') }}"
+      - id: extra-cache-key
+        if: inputs.extra-cache-paths != ''
+        env:
+          KEY_FILE: ${{ inputs.extra-cache-key-file }}
+          KEY_PREFIX: ${{ inputs.extra-cache-key-prefix }}
+        run: |
+          if [ -z "${KEY_FILE// }" ]; then
+            hash='no-key-file'
+          elif [ ! -f "$KEY_FILE" ]; then
+            echo "::error::inputs.extra-cache-key-file was provided, but the file does not exist or is not a regular file: $KEY_FILE"
+            exit 1
+          else
+            hash=$(sha256sum "$KEY_FILE" | awk '{print $1}')
+          fi
+          if [ -z "$KEY_PREFIX" ]; then
+            echo "key=${hash}" >> "$GITHUB_OUTPUT"
+          else
+            echo "key=${KEY_PREFIX}-${hash}" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/cache@v5
+        if: inputs.extra-cache-paths != ''
+        with:
+          path: ${{ inputs.extra-cache-paths }}
+          key: ${{ steps.extra-cache-key.outputs.key }}
       - id: build
         run: |
           # Write .netrc file with the secret contents:

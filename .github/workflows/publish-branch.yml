@@ -23,6 +23,11 @@ on:
         required: false
         default: ''
         type: string
+      imagetag:
+        description: "The image tag to use when publishing. Defaults to the branch or tag name that triggered the workflow."
+        required: false
+        type: string
+        default: ${{ github.ref_name }}
     secrets:
       netrcb64:
         description: "Netrc Base64-encoded file content for authenticated downloads. Overrides netrc secret."
@@ -41,7 +46,7 @@ jobs:
     runs-on: ${{ inputs.runner-version }}
     env:
       REPOBASE: ghcr.io/${{ github.repository_owner }}
-      IMAGETAG: ${{ github.ref_name }}
+      IMAGETAG: ${{ inputs.imagetag }}
     steps:
       - uses: actions/checkout@v6
         with:

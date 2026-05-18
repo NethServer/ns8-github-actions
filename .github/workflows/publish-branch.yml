@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: ${{ github.ref_name }}
+      overlay-images-cache:
+        description: 'Cache for overlay images. Set to false to disable caching and always rebuild overlay images.'
+        required: false
+        default: false
+        type: boolean
     secrets:
       netrcb64:
         description: "Netrc Base64-encoded file content for authenticated downloads. Overrides netrc secret."
@@ -79,6 +84,15 @@ jobs:
         with:
           path: ${{ inputs.extra-cache-paths }}
           key: ${{ steps.extra-cache-key.outputs.key }}
+      - id: overlay_images
+        if: inputs.overlay-images-cache
+        run: echo "images_dir=$(buildah info --format '{{.store.GraphRoot}}/overlay-images')" >> "$GITHUB_OUTPUT"
+      - id: overlay_cache
+        if: inputs.overlay-images-cache && steps.overlay_images.outputs.images_dir != ''
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.overlay_images.outputs.images_dir }}
+          key: overlay-images-${{ github.ref_name }}
       - id: build
         run: |
           # Write .netrc file with the secret contents:

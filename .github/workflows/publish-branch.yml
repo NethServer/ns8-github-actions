@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: ${{ github.ref_name }}
+      authenticated-build:
+        description: "Whether to use authenticated build with buildah login. Authenticated build is required to publish to ghcr.io and can improve layer caching."
+        required: false
+        type: boolean
+        default: false
     secrets:
       netrcb64:
         description: "Netrc Base64-encoded file content for authenticated downloads. Overrides netrc secret."
@@ -79,6 +84,10 @@ jobs:
         with:
           path: ${{ inputs.extra-cache-paths }}
           key: ${{ steps.extra-cache-key.outputs.key }}
+      - id: buildah-login
+        if: inputs.authenticated-build
+        run: |
+          buildah login -u ${{ github.actor }} --password-stdin ghcr.io <<<"${{ secrets.GITHUB_TOKEN }}"
       - id: build
         run: |
           # Write .netrc file with the secret contents:

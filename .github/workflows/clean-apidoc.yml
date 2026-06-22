@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - id: checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - id: cleanup
         run: |
           REMOTE_BRANCH="apidoc-${{ github.event.ref }}"

@@ -38,7 +38,7 @@ jobs:
     outputs:
       ui_tests_needed: ${{ steps.changes.outputs.ui_tests_needed }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.head_sha }}
           fetch-depth: 2

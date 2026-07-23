@@ -208,7 +208,7 @@ jobs:
           RUN_UI_TESTS: ${{ inputs.run_ui_tests && matrix.node == inputs.ui_test_node }}
       - name: "Save tests results"
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: tests-logs-${{ matrix.node }}
           path: |

@@ -143,7 +143,7 @@ jobs:
           repository: NethServer/ns8-terraform-infra
           path: infra
       - name: "OpenTofu - Setup Tofu"
-        uses: opentofu/setup-opentofu@v2.0.0
+        uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_wrapper: false
       - name: "OpenTofu - Tofu Apply"

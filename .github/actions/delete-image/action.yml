@@ -15,7 +15,7 @@ runs:
         for image in ${{ inputs.images }} ; do
           versions_path="${{ github.event.organization.url || github.event.repository.owner.url }}/packages/container/${image}/versions"
           version_id=$(gh api --paginate -q ".[] | select(.metadata.container.tags == [\"${ref}\"]) | .id" ${versions_path})
-          if [[ -n ${version_id}} ]]; then
+          if [[ -n ${version_id} ]]; then
             gh api --input /dev/null -X DELETE ${versions_path}/${version_id}
             echo "::notice::DELETE ${versions_path}/${version_id}"
           fi

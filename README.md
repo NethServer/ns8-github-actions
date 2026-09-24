@@ -202,7 +202,7 @@ asserts, then `remove-module`.
 
 | Input | Default | |
 |---|---|---|
-| `distro` | `rocky9` | `rocky9`, `debian12` or `debian13` |
+| `distro` | `rocky9 debian13` | space-separated list of `rocky9`, `debian12`, `debian13`. Each one gets its own job and VM |
 | `cloud_image_url` | | overrides the URL implied by `distro` |
 | `corebranch` | `ns8-stable` | branch or tag of `ns8-core` |
 | `coremodules` | | extra module URLs passed to `install.sh` |

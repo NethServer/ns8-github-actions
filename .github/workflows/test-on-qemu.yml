@@ -16,8 +16,8 @@ on:
       distro:
         required: false
         type: string
-        default: rocky9
-        description: "Guest distribution: rocky9, debian12 or debian13"
+        default: "rocky9 debian13"
+        description: "Space-separated guest distributions, one job and one VM each: rocky9, debian12 or debian13"
       cloud_image_url:
         required: false
         type: string
@@ -104,7 +104,25 @@ on:
         required: false
 
 jobs:
+  distros:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - id: list
+        env:
+          DISTRO: ${{ inputs.distro }}
+        run: |
+          set -euo pipefail
+          # One VM per distribution, like the leader_nodes matrix of the DigitalOcean workflow.
+          echo "list=$(printf '%s\n' ${DISTRO} | jq -ncR '[inputs | select(length > 0)]')" >> "${GITHUB_OUTPUT}"
+
   test-module:
+    needs: distros
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: ${{ fromJSON(needs.distros.outputs.list) }}
     runs-on: ${{ inputs.runs_on }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
 
@@ -151,7 +169,7 @@ jobs:
           if [ -n "${{ inputs.cloud_image_url }}" ]; then
             url="${{ inputs.cloud_image_url }}"
           else
-            case "${{ inputs.distro }}" in
+            case "${{ matrix.distro }}" in
               rocky9)
                 url="https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2" ;;
               debian13|trixie)
@@ -159,7 +177,7 @@ jobs:
               debian12|bookworm)
                 url="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2" ;;
               *)
-                echo "::error::unknown distro '${{ inputs.distro }}', expected rocky9, debian12 or debian13"
+                echo "::error::unknown distro '${{ matrix.distro }}', expected rocky9, debian12 or debian13"
                 exit 1 ;;
             esac
           fi
@@ -334,7 +352,7 @@ jobs:
             echo "|---|---|"
             echo "| image | \`${IMAGE_URL}\` |"
             [ -n "${digest}" ] && echo "| digest | \`${digest}\` |"
-            echo "| guest | ${{ inputs.distro }} |"
+            echo "| guest | ${{ matrix.distro }} |"
           } >> "${GITHUB_STEP_SUMMARY}"
           echo "IMAGE_DIGEST=${digest}" >> "${GITHUB_ENV}"
 
@@ -461,7 +479,7 @@ jobs:
           EOS
           chmod +x "${VM_DIR}/resolve-sum.sh"
 
-          case "${{ inputs.distro }}" in
+          case "${{ matrix.distro }}" in
             rocky9) algo=sha256 ;;
             *)      algo=sha512 ;;
           esac
@@ -487,7 +505,7 @@ jobs:
         id: image-cache
         with:
           path: ${{ env.VM_DIR }}/base.qcow2
-          key: cloud-image-${{ inputs.distro }}-${{ env.IMAGE_URL_ID }}-${{ env.IMAGE_SUM }}
+          key: cloud-image-${{ matrix.distro }}-${{ env.IMAGE_URL_ID }}-${{ env.IMAGE_SUM }}
 
       - name: Fetch and verify the cloud image
         id: image
@@ -537,7 +555,7 @@ jobs:
         if: steps.image.outputs.fetched == 'true'
         with:
           path: ${{ env.VM_DIR }}/base.qcow2
-          key: cloud-image-${{ inputs.distro }}-${{ env.IMAGE_URL_ID }}-${{ env.IMAGE_SUM }}
+          key: cloud-image-${{ matrix.distro }}-${{ env.IMAGE_URL_ID }}-${{ env.IMAGE_SUM }}
 
       - name: Prepare the guest disk
         run: |
@@ -682,7 +700,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-outputs-${{ inputs.distro }}-${{ env.REF_SLUG }}
+          name: test-outputs-${{ matrix.distro }}-${{ env.REF_SLUG }}
           path: ${{ github.workspace }}/${{ inputs.path }}/tests/outputs
           if-no-files-found: warn
           retention-days: 14

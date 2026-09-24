@@ -1,0 +1,203 @@
+name: "Test module on QEMU"
+
+# Drop-in replacement for test-module.yml,
+# on a throwaway QEMU node instead of a DigitalOcean droplet. See docs/test-module-qemu.md.
+
+on:
+  workflow_call:
+    inputs:
+      ui_tests_strategy:
+        required: false
+        type: string
+        default: on_renovate_ui_change
+        description: "When to run UI tests: always, on_ui_change, on_renovate_ui_change, never"
+      debug_shell:
+        required: false
+        type: boolean
+        default: false
+        description: "Debug shell"
+
+      image_name:
+        required: false
+        type: string
+        default: ""
+        description: "Image name when it differs from the repository name, as `reponame` in build-images.sh does for ns8-postgresql18. Empty derives it from the repository"
+      path:
+        required: false
+        type: string
+        default: ""
+        description: "Subdirectory of the caller repository holding the module"
+      script:
+        required: false
+        type: string
+        default: ""
+        description: "Test script to run, relative to `path`. Empty selects the shared scripts/test-module.sh, which is what a module should want"
+      ci_actions_ref:
+        required: false
+        type: string
+        default: v1
+        description: "Ref this repository is read at for the shared test runner. Pass the same ref as `uses:` when testing a branch of ns8-github-actions"
+
+      distros:
+        required: false
+        type: string
+        default: '["rocky9","debian13"]'
+        description: "JSON array of guest distributions to test on"
+      scenarios:
+        required: false
+        type: string
+        default: '["install"]'
+        description: "JSON array of scenarios. `install` tests the image on a clean node, `update` installs a baseline first and upgrades to it. Robot Framework does not error on an unused -v, so a suite that ignores $SCENARIO would silently run install twice under `update` rather than fail: opt in explicitly with `[\"install\",\"update\"]` once the suite handles it"
+      update_from:
+        required: false
+        type: string
+        default: ""
+        description: "Tag the update scenario starts from. Empty resolves the newest non-prerelease release, then falls back to latest"
+      ui_test_distro:
+        required: false
+        type: string
+        default: rocky9
+        description: "Publish screenshots from this leg only. The browser is the same everywhere, so more legs only means more comments"
+      ui_test_scenario:
+        required: false
+        type: string
+        default: install
+        description: "Publish screenshots from this scenario only"
+
+      corebranch:
+        required: false
+        type: string
+        default: ns8-stable
+        description: "git ref of ns8-core, deciding which install.sh is downloaded"
+      install_args:
+        required: false
+        type: string
+        default: ""
+        description: "Arguments for that install.sh. A core image here replaces the ns8-stable it hardcodes; anything else is a module to install alongside. Testing a dev core needs both, since corebranch alone still installs ns8-stable"
+      cloud_image_url:
+        required: false
+        type: string
+        default: ""
+        description: "Cloud image URL, overriding the one `distros` implies"
+      runs_on:
+        required: false
+        type: string
+        default: ubuntu-24.04
+        description: "Runner label. It must provide /dev/kvm"
+      vm_mem:
+        required: false
+        type: number
+        default: 8192
+        description: "Guest memory in MiB"
+      vm_cpus:
+        required: false
+        type: number
+        default: 4
+        description: "Guest vCPU count"
+      disk_size:
+        required: false
+        type: string
+        default: 30G
+        description: "Guest disk size after resize"
+      timeout_minutes:
+        required: false
+        type: number
+        default: 60
+        description: "Per-leg job timeout"
+
+    secrets:
+      do_token:
+        required: false
+        description: "Unused. Declared so a caller moving off the DigitalOcean wrapper keeps working without editing its secrets block"
+
+jobs:
+  module:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == '' }}
+    uses: ./.github/workflows/module-info.yml
+
+  check_ui_tests_needed:
+    uses: ./.github/workflows/check-ui-tests-needed.yml
+    with:
+      ui_tests_strategy: ${{ inputs.ui_tests_strategy }}
+      head_sha: ${{ github.event.workflow_run.head_sha || github.sha }}
+      head_branch: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+
+  # An app module is installed by its own suite, so the baseline it upgrades
+  # from has to be named here rather than seeded by install.sh.
+  baseline:
+    if: ${{ contains(fromJSON(inputs.scenarios), 'update') }}
+    needs: module
+    runs-on: ${{ inputs.runs_on }}
+    outputs:
+      image: ${{ steps.resolve.outputs.image }}
+    steps:
+      - id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPLICIT_TAG: ${{ inputs.update_from }}
+          IMAGE: ${{ format('ghcr.io/{0}/{1}', needs.module.outputs.owner, inputs.image_name != '' && inputs.image_name || needs.module.outputs.name) }}
+        run: |
+          set -euo pipefail
+          if [ -n "${EXPLICIT_TAG}" ]; then
+            tag="${EXPLICIT_TAG}"
+          else
+            # No release at all means the module never shipped: latest is the
+            # only baseline there is.
+            tag=$(gh release list --repo "${{ github.repository }}" \
+                    --exclude-pre-releases --exclude-drafts \
+                    --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || true)
+            tag="${tag:-latest}"
+          fi
+          echo "image=${IMAGE}:${tag}" >> "${GITHUB_OUTPUT}"
+          echo "Update scenario starts from ${IMAGE}:${tag}"
+
+  test:
+    needs: [module, check_ui_tests_needed, baseline]
+    # baseline is legitimately skipped absent an update leg, but not failed:
+    # that would reach robot as an empty -v UPDATE_FROM:.
+    if: ${{ always()
+            && needs.module.result == 'success'
+            && needs.check_ui_tests_needed.result == 'success'
+            && (needs.baseline.result == 'success' || needs.baseline.result == 'skipped') }}
+    # github.ref is the default branch under workflow_run, so it cannot key this.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref }}-${{ matrix.distro }}-${{ matrix.scenario }}
+      cancel-in-progress: true
+    # Granted here because test-on-qemu.yml, called below, cannot hold more
+    # than this job does.
+    permissions:
+      contents: read
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: ${{ fromJSON(inputs.distros) }}
+        scenario: ${{ fromJSON(inputs.scenarios) }}
+    uses: ./.github/workflows/test-on-qemu.yml
+    with:
+      distro: ${{ matrix.distro }}
+      image_url: ${{ inputs.image_name != '' && format('ghcr.io/{0}/{1}:{2}', needs.module.outputs.owner, inputs.image_name, needs.module.outputs.tag) || needs.module.outputs.image }}
+      repo_ref: ${{ needs.module.outputs.sha }}
+      version_tag: ${{ needs.module.outputs.tag }}
+      path: ${{ inputs.path }}
+      script: ${{ inputs.script }}
+      ci_actions_ref: ${{ inputs.ci_actions_ref }}
+      # Empty for a module's own script: it was not written to expect these.
+      args: ${{ inputs.script != '' && ''
+                || format('-v SCENARIO:{0}{1}', matrix.scenario,
+                     matrix.scenario == 'update' && format(' -v UPDATE_FROM:{0}', needs.baseline.outputs.image) || '') }}
+      # distro alone no longer names a leg uniquely, since scenario is a second matrix dimension.
+      artifact_suffix: ${{ matrix.scenario }}
+      update_from: ${{ matrix.scenario == 'update' && needs.baseline.outputs.image || '' }}
+      run_ui_tests: ${{ matrix.distro == inputs.ui_test_distro
+                        && matrix.scenario == inputs.ui_test_scenario
+                        && needs.check_ui_tests_needed.outputs.ui_tests_needed == 'true' }}
+      corebranch: ${{ inputs.corebranch }}
+      install_args: ${{ inputs.install_args }}
+      cloud_image_url: ${{ inputs.cloud_image_url }}
+      runs_on: ${{ inputs.runs_on }}
+      vm_mem: ${{ inputs.vm_mem }}
+      vm_cpus: ${{ inputs.vm_cpus }}
+      disk_size: ${{ inputs.disk_size }}
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      debug_shell: ${{ inputs.debug_shell }}

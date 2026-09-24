@@ -657,12 +657,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO_TOKEN: ${{ github.token }}
           OUTPUT_DIR: ${{ github.workspace }}/${{ inputs.path }}/tests/outputs
+          # Branch names come from whoever opens the pull request, so never inline them.
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}
         run: |
           set -euo pipefail
           # workflow_run carries no pull request context: look the number up
           pr_number="${{ github.event.pull_request.number }}"
           if [ -z "$pr_number" ]; then
-            branch="${{ github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}"
+            branch="${HEAD_BRANCH}"
             pr_number=$(gh pr list --repo "${{ github.repository }}" --head "$branch" \
                           --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
           fi

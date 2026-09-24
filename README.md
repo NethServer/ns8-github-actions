@@ -57,6 +57,22 @@ jobs:
       distro: ${{ matrix.distro }}
 ```
 
+#### Switch from the DigitalOcean workflow
+
+A module that calls `test-on-digitalocean-infra.yml` directly can change only
+its `uses:` line. `args` and the `do_token` secret are accepted as they are.
+
+```yaml
+  run_tests:
+    needs: module
+    uses: NethServer/ns8-github-actions/.github/workflows/test-on-qemu.yml@v1
+    with:
+      args: "ghcr.io/${{needs.module.outputs.owner}}/${{needs.module.outputs.name}}:${{needs.module.outputs.tag}}"
+      repo_ref: ${{needs.module.outputs.sha}}
+    secrets:
+      do_token: ${{ secrets.do_token }}
+```
+
 #### Test the published image, chained on the build
 
 Same shape as `test-module.yml`: wait for
@@ -191,6 +207,7 @@ asserts, then `remove-module`.
 | `corebranch` | `ns8-stable` | branch or tag of `ns8-core` |
 | `coremodules` | | extra module URLs passed to `install.sh` |
 | `image_url` | | test this image instead of building one |
+| `args` | | script arguments after the node address, as in `test-on-digitalocean-infra.yml`. The first one is the image, and it replaces `image_url` |
 | `script` | `test-module.sh` | test entry point |
 | `path` | | subdirectory holding the module |
 | `repo_ref` | `github.sha` | caller ref to check out |
@@ -213,6 +230,7 @@ Both optional.
 |---|---|
 | `dockerhub_user` | raises the Docker Hub pull limit above the 100 per 6h that anonymous runners share. Used by the runner and by the guest |
 | `dockerhub_token` | |
+| `do_token` | ignored, accepted so a DigitalOcean caller needs no other change |
 
 Pass them only if the module pulls enough Docker Hub images to risk a 429.
 

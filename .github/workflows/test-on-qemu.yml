@@ -38,6 +38,11 @@ on:
         type: string
         default: ""
         description: "Module image to test. When empty, build-images.sh builds one from the checkout"
+      args:
+        required: false
+        type: string
+        default: ""
+        description: "Arguments passed to the script after the node address, as test-on-digitalocean-infra.yml does. The first one is the module image, and it replaces image_url"
       script:
         required: false
         type: string
@@ -89,6 +94,10 @@ on:
         default: false
         description: "Open a tmate shell when the suite fails"
     secrets:
+      # Unused. Accepted so a caller of test-on-digitalocean-infra.yml can switch
+      # here by changing only its uses: line.
+      do_token:
+        required: false
       dockerhub_user:
         required: false
       dockerhub_token:
@@ -274,7 +283,7 @@ jobs:
 
       - name: Build the module images
         id: build
-        if: ${{ inputs.image_url == '' }}
+        if: ${{ inputs.image_url == '' && inputs.args == '' }}
         working-directory: ${{ github.workspace }}/${{ inputs.path }}
         run: |
           set -euo pipefail
@@ -284,7 +293,7 @@ jobs:
           REPOBASE="${REGISTRY}" bash ./build-images.sh
 
       - name: Push the module images to the throwaway registry
-        if: ${{ inputs.image_url == '' }}
+        if: ${{ inputs.image_url == '' && inputs.args == '' }}
         run: |
           set -euo pipefail
           built="${{ steps.build.outputs.images }}"
@@ -301,9 +310,14 @@ jobs:
           curl -fsS "http://${REGISTRY}/v2/_catalog"; echo
 
       - name: Use the module image given by the caller
-        if: ${{ inputs.image_url != '' }}
+        if: ${{ inputs.image_url != '' || inputs.args != '' }}
+        env:
+          INPUT_IMAGE_URL: ${{ inputs.image_url }}
+          ARGS: ${{ inputs.args }}
         run: |
-          echo "IMAGE_URL=${{ inputs.image_url }}" >> "${GITHUB_ENV}"
+          set -euo pipefail
+          read -r first _ <<< "${ARGS}"
+          echo "IMAGE_URL=${INPUT_IMAGE_URL:-${first}}" >> "${GITHUB_ENV}"
 
       - name: Describe the image under test
         run: |
@@ -629,9 +643,17 @@ jobs:
         id: suite
         continue-on-error: true
         working-directory: ${{ github.workspace }}/${{ inputs.path }}
+        env:
+          ARGS: ${{ inputs.args }}
         run: |
           set -o pipefail
-          bash "./${{ inputs.script }}" "${VM_IP}" "${IMAGE_URL}"
+          if [ -n "${ARGS}" ]; then
+            # Word splitting is wanted: args is a command line, as in the DigitalOcean workflow.
+            # shellcheck disable=SC2086
+            bash "./${{ inputs.script }}" "${VM_IP}" ${ARGS}
+          else
+            bash "./${{ inputs.script }}" "${VM_IP}" "${IMAGE_URL}"
+          fi
 
       - name: Collect diagnostics
         if: always()

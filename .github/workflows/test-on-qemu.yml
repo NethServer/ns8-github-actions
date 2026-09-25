@@ -710,10 +710,13 @@ jobs:
             echo "### Interface of \`${{ inputs.distro }}\`"
             echo
             mkdir -p shots
+            n=0
             for f in "${shots[@]}"; do
               name=$(basename "${f%.*}")
               # cml only uploads links it can parse, and a space ends a Markdown link.
-              link="shots/$(basename "${f// /_}")"
+              # The counter keeps two images with the same name apart.
+              n=$((n + 1))
+              link="shots/${n}-$(basename "${f// /_}")"
               cp "$f" "$link"
               echo "**${name//_/ }**"
               echo

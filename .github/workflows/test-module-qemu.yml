@@ -152,6 +152,8 @@ jobs:
           echo "Update scenario starts from ${IMAGE}:${tag}"
 
   test:
+    # Nested jobs show as caller / this / leg: keep each part short.
+    name: ${{ matrix.distro }} ${{ matrix.scenario }}
     needs: [module, check_ui_tests_needed, baseline]
     # baseline is legitimately skipped absent an update leg, but not failed:
     # that would reach robot as an empty -v UPDATE_FROM:.

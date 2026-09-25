@@ -1,0 +1,766 @@
+name: "Setup an NS8 node on QEMU and test a module"
+
+# Self-contained alternative to test-on-digitalocean-infra.yml, which needs the
+# Nethesis DigitalOcean account, its NS8-CI project and the ci.nethserver.net
+# domain. This one boots a cloud image under KVM on the runner itself, so it
+# works on any repository, including a fork and a pull request from a fork.
+#
+# The cloud-init files are written inline rather than read from this repository:
+# a reusable workflow is handed no context telling it which ref it was called
+# at, so a second checkout would have to hardcode one and could drift from the
+# tag the caller pinned. Inline, the seed and the workflow always match.
+
+on:
+  workflow_call:
+    inputs:
+      distro:
+        required: false
+        type: string
+        default: rocky9
+        description: "Guest distribution: rocky9, debian12 (bookworm) or debian13 (trixie)"
+      cloud_image_url:
+        required: false
+        type: string
+        default: ""
+        description: "Cloud image URL, overrides the one implied by `distro`"
+      corebranch:
+        required: false
+        type: string
+        default: ns8-stable
+        description: "git ref of ns8-core, deciding which install.sh is downloaded"
+      install_args:
+        required: false
+        type: string
+        default: ""
+        description: "Arguments for that install.sh. A core image here replaces the ns8-stable it hardcodes; anything else is a module to install alongside"
+      image_url:
+        required: true
+        type: string
+        description: "Module image to test, published and reachable from the guest"
+      args:
+        required: false
+        type: string
+        default: ""
+        description: "Extra arguments forwarded to robot, such as `-v SCENARIO:update`"
+      artifact_suffix:
+        required: false
+        type: string
+        default: ""
+        description: "Extra segment appended to the test-outputs artifact name and shown next to the guest in the job summary. A caller matrixing on more than distro, such as a scenario, sets it, or two legs upload same-named artifacts and their summaries read identically"
+      update_from:
+        required: false
+        type: string
+        default: ""
+        description: "Baseline image an update scenario starts from, shown in the job summary. Purely informational: robot still receives it through `args`, this does not act on anything by itself"
+      ci_actions_ref:
+        required: false
+        type: string
+        default: v1
+        description: "Ref this repository is read at for the shared test runner. A reusable workflow is handed no context naming the ref it was called at, so testing a branch of ns8-github-actions means naming it here too"
+      script:
+        required: false
+        type: string
+        default: test-module.sh
+        description: "Test script to run, relative to `path`. Empty selects scripts/test-module.sh of this repository, so a module needs no script of its own"
+      path:
+        required: false
+        type: string
+        default: ""
+        description: "Subdirectory of the caller repository holding the module"
+      repo_ref:
+        required: false
+        type: string
+        default: ${{ github.sha }}
+        description: "Ref of the caller repository to check out"
+      runs_on:
+        required: false
+        type: string
+        default: ubuntu-24.04
+        description: "Runner label. It must provide /dev/kvm"
+      vm_mem:
+        required: false
+        type: number
+        default: 8192
+        description: "Guest memory in MiB"
+      vm_cpus:
+        required: false
+        type: number
+        default: 4
+        description: "Guest vCPU count"
+      disk_size:
+        required: false
+        type: string
+        default: 30G
+        description: "Guest disk size after resize"
+      timeout_minutes:
+        required: false
+        type: number
+        default: 60
+        description: "Job timeout"
+      version_tag:
+        required: false
+        type: string
+        default: ""
+        description: "Names the image tag and the artifact. Defaults to the branch under test, which workflow_run callers have to pass explicitly"
+      debug_shell:
+        required: false
+        type: boolean
+        default: false
+        description: "Open a tmate shell when the suite fails"
+      run_ui_tests:
+        required: false
+        type: boolean
+        default: false
+        description: "Reaches the test script as RUN_UI_TESTS, and publishes the images of tests/outputs as a comment on the pull request. Callers running a matrix should set it on one leg only, or every leg comments"
+
+jobs:
+  test-module:
+    runs-on: ${{ inputs.runs_on }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+
+    env:
+      VM_IP: 192.168.77.10
+      GW_IP: 192.168.77.1
+      SUBNET: 192.168.77.0/24
+      VM_MAC: "52:54:00:12:34:56"
+      BR: ns8br0
+      TAP: ns8tap0
+      VM_DIR: /mnt/ns8vm
+      MODULE_DIR: ${{ github.workspace }}/${{ inputs.path }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.repo_ref }}
+
+      # Under workflow_run the run is attached to the default branch, so the pull
+      # request never shows it. A commit status on the tested commit does.
+      - name: Mark the tested commit as pending
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISTRO: ${{ inputs.distro }}
+          SUFFIX: ${{ inputs.artifact_suffix }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # repo_ref may be a branch name, and the statuses API wants a SHA.
+          sha=$(git rev-parse HEAD)
+          leg="${DISTRO}${SUFFIX:+-${SUFFIX}}"
+          {
+            echo "STATUS_SHA=${sha}"
+            echo "STATUS_CONTEXT=continuous-integration/qemu/${leg}"
+            echo "STATUS_DESCRIPTION=Test on QEMU (${DISTRO}${SUFFIX:+, ${SUFFIX}})"
+          } >> "${GITHUB_ENV}"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${sha}" \
+            -f state=pending -f context="continuous-integration/qemu/${leg}" \
+            -f description="Test on QEMU (${DISTRO}${SUFFIX:+, ${SUFFIX}})" \
+            -f target_url="${RUN_URL}" > /dev/null
+
+      - name: Check out the shared test runner
+        if: ${{ inputs.script == '' }}
+        uses: actions/checkout@v7
+        with:
+          repository: NethServer/ns8-github-actions
+          ref: ${{ inputs.ci_actions_ref }}
+          path: .ci-actions
+
+      - name: Derive the version tag
+        env:
+          # Through the environment, never interpolated into the script: on a
+          # pull request from a fork the branch name is chosen by whoever opens
+          # it, and a $(...) in it would run here.
+          VERSION_TAG: ${{ inputs.version_tag }}
+          HEAD_REF: ${{ github.head_ref }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # The branch under test names both the image tag and the artifact, so
+          # a downloaded bundle says what it came from without opening it.
+          # HEAD_REF is empty under workflow_run, and REF_NAME is the default
+          # branch there, so such callers pass version_tag instead.
+          ref="${VERSION_TAG:-${HEAD_REF:-${REF_NAME}}}"
+          slug=$(printf '%s' "${ref}" \
+                 | tr '[:upper:]' '[:lower:]' \
+                 | sed -e 's|[^a-z0-9._-]|-|g' -e 's|^-*||' -e 's|-*$||' \
+                 | cut -c1-64)
+          echo "REF_SLUG=${slug:-ci}" >> "${GITHUB_ENV}"
+
+      - name: Resolve the cloud image
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.cloud_image_url }}" ]; then
+            url="${{ inputs.cloud_image_url }}"
+          else
+            case "${{ inputs.distro }}" in
+              rocky9)
+                url="https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2" ;;
+              debian13|trixie)
+                url="https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2" ;;
+              debian12|bookworm)
+                url="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2" ;;
+              *)
+                echo "::error::unknown distro '${{ inputs.distro }}', expected rocky9, debian12 or debian13"
+                exit 1 ;;
+            esac
+          fi
+          echo "CLOUD_IMAGE_URL=${url}" >> "${GITHUB_ENV}"
+          echo "Guest image: ${url}"
+
+      - name: Check runner capacity and KVM
+        run: |
+          set -euo pipefail
+          nproc; free -h; df -h / /mnt
+          # A missing /dev/kvm would silently fall back to TCG emulation, which
+          # turns a ten minute job into a timeout with no obvious cause.
+          test -e /dev/kvm || { echo "::error::/dev/kvm is missing on runner '${{ inputs.runs_on }}'"; exit 1; }
+          ls -l /dev/kvm
+
+      - name: Create the VM directory
+        run: |
+          set -euo pipefail
+          # /mnt on the current ubuntu-24.04 image is the root filesystem, which
+          # reports 87G free. The path is kept for runner images that do give
+          # /mnt its own larger disk.
+          sudo mkdir -p "${VM_DIR}"
+          sudo chown "$USER:$USER" "${VM_DIR}"
+
+      - name: Install QEMU and cloud-image tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils skopeo
+          # Ubuntu 24.04 confines unprivileged user namespaces by default, which
+          # rootless podman needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - name: Generate the CI SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          # $HOME rather than a hardcoded /home/runner: runs_on is an input, and
+          # a self-hosted runner need not run as `runner`.
+          keyfile="${HOME}/.ssh/ns8ci"
+          # A self-hosted runner keeps its filesystem between jobs, where
+          # ssh-keygen would stop on its overwrite prompt.
+          rm -f "${keyfile}" "${keyfile}.pub"
+          # RSA in PEM form: a module suite that still pins paramiko 2.9.2
+          # needs it to talk to OpenSSH 8.7 and later. A current paramiko
+          # handles rsa-sha2-* on its own and does not care.
+          ssh-keygen -t rsa -b 4096 -m PEM -N '' -C ns8-ci -f "${keyfile}"
+          echo "SSH_KEYFILE=${keyfile}" >> "${GITHUB_ENV}"
+          # Same reason: appending unconditionally would stack duplicate Host
+          # blocks on a reused runner.
+          if ! grep -qx 'Host ns8' ~/.ssh/config 2>/dev/null; then
+            cat >> ~/.ssh/config <<EOF
+          Host ns8
+            HostName ${VM_IP}
+            User root
+            IdentityFile ${keyfile}
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            BatchMode yes
+            ConnectTimeout 10
+            ServerAliveInterval 30
+            ServerAliveCountMax 20
+            LogLevel ERROR
+          EOF
+          fi
+          chmod 600 ~/.ssh/config
+
+      - name: Build the host bridge and NAT
+        run: |
+          set -euxo pipefail
+          sudo modprobe tun
+          sudo sysctl -w net.ipv4.ip_forward=1
+          sudo ip link add name "${BR}" type bridge
+          sudo ip addr add "${GW_IP}/24" dev "${BR}"
+          sudo ip link set "${BR}" up
+          sudo ip tuntap add dev "${TAP}" mode tap user "$USER"
+          sudo ip link set "${TAP}" master "${BR}"
+          sudo ip link set "${TAP}" up
+          sudo chmod 0666 /dev/kvm /dev/net/tun
+          sudo chmod 0666 /dev/vhost-net || true
+          # Docker ships preinstalled on the runners and sets FORWARD to DROP.
+          # Without these the guest boots fine and then cannot reach any registry.
+          sudo iptables -t nat -A POSTROUTING -s "${SUBNET}" ! -d "${SUBNET}" -j MASQUERADE
+          sudo iptables -I FORWARD 1 -i "${BR}" -j ACCEPT
+          sudo iptables -I FORWARD 1 -o "${BR}" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+      - name: Point the runner podman at the host network namespace
+        run: |
+          set -euo pipefail
+          # test-module.sh runs podman with no --network, so the robot container
+          # would otherwise reach the guest through pasta or slirp4netns
+          # depending on the podman version the runner image ships that month.
+          mkdir -p ~/.config/containers
+          printf '[containers]\nnetns = "host"\n' > ~/.config/containers/containers.conf
+
+      - name: Describe the image under test
+        env:
+          IMAGE_URL: ${{ inputs.image_url }}
+          DISTRO: ${{ inputs.distro }}
+          ARTIFACT_SUFFIX: ${{ inputs.artifact_suffix }}
+          UPDATE_FROM: ${{ inputs.update_from }}
+        run: |
+          set -uo pipefail
+          echo "IMAGE_URL=${IMAGE_URL}" >> "${GITHUB_ENV}"
+          # A tag can be repushed, a digest cannot, so the summary carries both:
+          # it has to say exactly which artifact the suite ran against.
+          #
+          # Failing here rather than twenty minutes later at add-module: the
+          # usual cause is a publish workflow that has not finished, or a
+          # build-images.sh publishing under a name module-info does not derive.
+          # No --no-tags: it only skips listing tags, and the skopeo 1.4 that
+          # ubuntu-22.04 ships does not know the flag.
+          if ! raw=$(skopeo inspect "docker://${IMAGE_URL}" 2>&1); then
+            echo "::error::cannot resolve ${IMAGE_URL}"
+            echo "${raw}"
+            exit 1
+          fi
+          digest=$(printf '%s' "${raw}" | jq -r '.Digest // empty')
+          # Through env, not spliced in: a value with shell syntax would run.
+          guest="${DISTRO}"
+          artifact_name_suffix=""
+          if [ -n "${ARTIFACT_SUFFIX}" ]; then
+            guest="${guest} (${ARTIFACT_SUFFIX})"
+            artifact_name_suffix="-${ARTIFACT_SUFFIX}"
+          fi
+          {
+            echo "### Module image"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| image | \`${IMAGE_URL}\` |"
+            [ -n "${digest}" ] && echo "| digest | \`${digest}\` |"
+            echo "| guest | ${guest} |"
+            [ -n "${UPDATE_FROM}" ] && echo "| update from | \`${UPDATE_FROM}\` |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          echo "IMAGE_DIGEST=${digest}" >> "${GITHUB_ENV}"
+          echo "ARTIFACT_NAME_SUFFIX=${artifact_name_suffix}" >> "${GITHUB_ENV}"
+
+      - name: Build the cloud-init seed
+        run: |
+          set -euo pipefail
+          pubkey=$(cat "${SSH_KEYFILE}.pub")
+
+          cat > "${VM_DIR}/meta-data" <<EOF
+          instance-id: ns8-ci-0001
+          local-hostname: ns8-ci
+          EOF
+
+          cat > "${VM_DIR}/network-config" <<EOF
+          version: 2
+          ethernets:
+            eth0:
+              # Both distributions rename interfaces, so the MAC pinned on the
+              # QEMU command line is the only stable selector.
+              match:
+                macaddress: "${VM_MAC}"
+              dhcp4: false
+              dhcp6: false
+              addresses:
+                - "${VM_IP}/24"
+              # Not netplan's "default" keyword: cloud-init runs the route
+              # destination through ipaddress and raises on anything else.
+              routes:
+                - to: 0.0.0.0/0
+                  via: "${GW_IP}"
+              # The bridge runs no resolver: the runner's systemd-resolved only
+              # listens on 127.0.0.53, which the guest cannot reach.
+              nameservers:
+                addresses: [1.1.1.1, 8.8.8.8]
+              mtu: 1500
+          EOF
+
+          cat > "${VM_DIR}/user-data" <<EOF
+          #cloud-config
+          hostname: ns8-ci
+          fqdn: ns8-ci.test.local
+          prefer_fqdn_over_hostname: true
+          # cloud-init's own template maps the FQDN to loopback, which is wrong
+          # for a WireGuard endpoint. The real entry is written in runcmd.
+          manage_etc_hosts: false
+
+          disable_root: false
+          ssh_pwauth: false
+          users:
+            # No lock_passwd here: root has no password, cc_users_groups handles
+            # the password before the keys, and unlocking an empty one raises
+            # before the authorized_keys ever get written.
+            - name: root
+              ssh_authorized_keys:
+                - "${pubkey}"
+
+          growpart:
+            mode: auto
+            devices: ["/"]
+          resize_rootfs: true
+
+          write_files:
+            - path: /etc/ssh/sshd_config.d/00-ci-root.conf
+              permissions: '0600'
+              content: |
+                PermitRootLogin prohibit-password
+                PubkeyAuthentication yes
+                UseDNS no
+            # Module images are pulled rootless by the module user, which does
+            # not exist yet at provisioning time, so neither its registries.conf
+            # nor its auth.json can be seeded. Both have to be host-wide.
+            - path: /usr/local/sbin/ns8ci-prepare
+              permissions: '0755'
+              content: |
+                #!/bin/bash
+                # Debian cloud images run systemd-resolved, whose stub listener
+                # holds :53 and blocks any module that publishes that port.
+                # Rocky's cloud image does not run it, so this is a no-op there.
+                if systemctl is-active --quiet systemd-resolved; then
+                    systemctl disable --now systemd-resolved
+                    rm -f /etc/resolv.conf
+                    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
+                fi
+                # Debian names the unit ssh.service, Rocky sshd.service.
+                systemctl restart ssh 2>/dev/null || systemctl restart sshd
+
+          runcmd:
+            - [ bash, -c, "echo '${VM_IP} ns8-ci.test.local ns8-ci' >> /etc/hosts" ]
+            - [ /usr/local/sbin/ns8ci-prepare ]
+
+          final_message: "cloud-init done after \$UPTIME seconds"
+          EOF
+
+          cd "${VM_DIR}"
+          cloud-localds -v --network-config=network-config seed.iso user-data meta-data
+
+      - name: Resolve the published image checksum
+        run: |
+          set -euo pipefail
+          # Kept as a script: the fetch step re-runs it when a download fails
+          # its checksum, which happens while a distribution republishes.
+          cat > "${VM_DIR}/resolve-sum.sh" <<'EOS'
+          #!/bin/bash
+          set -uo pipefail
+          base="${CLOUD_IMAGE_URL%/*}"
+          file="${CLOUD_IMAGE_URL##*/}"
+          case "${IMAGE_ALGO}" in
+            sha256) curl -fsSL --retry 3 --retry-delay 2 "${base}/CHECKSUM" \
+                      | awk -v f="${file}" '$0 ~ "\\("f"\\) =" {print $NF}' ;;
+            sha512) curl -fsSL --retry 3 --retry-delay 2 "${base}/SHA512SUMS" \
+                      | awk -v f="${file}" '$2==f {print $1}' ;;
+          esac
+          EOS
+          chmod +x "${VM_DIR}/resolve-sum.sh"
+
+          case "${{ inputs.distro }}" in
+            rocky9) algo=sha256 ;;
+            *)      algo=sha512 ;;
+          esac
+          export IMAGE_ALGO="${algo}"
+          echo "IMAGE_ALGO=${algo}" >> "${GITHUB_ENV}"
+
+          # Keying on the published checksum means a new point release changes
+          # the key by itself, and a hit is the upstream image whatever its age.
+          sum=$("${VM_DIR}/resolve-sum.sh" || true)
+          if [ -z "${sum}" ]; then
+            # A weekly key still caches, but nothing can verify the bytes, so
+            # this must not pass unnoticed.
+            echo "::warning::no checksum reachable beside ${CLOUD_IMAGE_URL}; caching on a weekly key and skipping verification"
+            sum="week-$(date -u +%G-%V)"
+          fi
+          echo "IMAGE_SUM=${sum}" >> "${GITHUB_ENV}"
+          # cloud_image_url can aim two callers with the same distro at
+          # different images. On the weekly key nothing else separates them.
+          echo "IMAGE_URL_ID=$(printf '%s' "${CLOUD_IMAGE_URL}" | sha256sum | cut -c1-12)" >> "${GITHUB_ENV}"
+          echo "checksum: ${sum}"
+
+      - uses: actions/cache/restore@v6
+        id: image-cache
+        with:
+          path: ${{ env.VM_DIR }}/base.qcow2
+          key: cloud-image-${{ inputs.distro }}-${{ env.IMAGE_URL_ID }}-${{ env.IMAGE_SUM }}
+
+      - name: Fetch and verify the cloud image
+        id: image
+        run: |
+          set -euo pipefail
+          cd "${VM_DIR}"
+          verify() {
+            case "${IMAGE_SUM}" in week-*) return 0 ;; esac
+            echo "${IMAGE_SUM}  base.qcow2" | "${IMAGE_ALGO}sum" -c --status
+          }
+          if [ -f base.qcow2 ]; then
+            if verify; then
+              echo "cache hit, checksum matches"
+              echo "fetched=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+            # actions/cache/save cannot overwrite a key that exists, so this
+            # entry survives until GitHub evicts it and every run until then
+            # refetches. Only the cache is lost: the image is verified before
+            # it boots either way.
+            echo "::warning::the cached image does not match ${IMAGE_SUM}, refetching. The stale entry stays until GitHub evicts it."
+            rm -f base.qcow2
+          fi
+          for attempt in 1 2; do
+            curl -fsSL --retry 3 --retry-delay 5 -o base.qcow2 "${CLOUD_IMAGE_URL}"
+            if verify; then
+              break
+            fi
+            if [ "${attempt}" = 2 ]; then
+              echo "::error::${CLOUD_IMAGE_URL} does not match its published checksum"
+              exit 1
+            fi
+            # Debian republishes into latest/ in place, so the checksum read a
+            # moment ago can describe a release the download just missed.
+            echo "::warning::checksum mismatch on a fresh download, re-resolving once"
+            new=$("${VM_DIR}/resolve-sum.sh" || true)
+            if [ -n "${new}" ] && [ "${new}" != "${IMAGE_SUM}" ]; then
+              IMAGE_SUM="${new}"
+              echo "IMAGE_SUM=${new}" >> "${GITHUB_ENV}"
+            fi
+          done
+          echo "fetched=true" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/cache/save@v6
+        # Saved here rather than by actions/cache's post-job step, which would
+        # run after the guest has written gigabytes into the disk.
+        if: steps.image.outputs.fetched == 'true'
+        with:
+          path: ${{ env.VM_DIR }}/base.qcow2
+          key: cloud-image-${{ inputs.distro }}-${{ env.IMAGE_URL_ID }}-${{ env.IMAGE_SUM }}
+
+      - name: Prepare the guest disk
+        run: |
+          set -euo pipefail
+          cd "${VM_DIR}"
+          # A copy, so the cached base stays exactly what the checksum says.
+          cp base.qcow2 guest.qcow2
+          qemu-img resize guest.qcow2 "${{ inputs.disk_size }}"
+          qemu-img info guest.qcow2
+
+      - name: Boot the VM
+        run: |
+          set -euo pipefail
+          cd "${VM_DIR}"
+          # cache=unsafe: the guest writes gigabytes of container layers and is
+          # destroyed at the end of the job, so host-side flushing buys nothing.
+          # virtio-rng avoids entropy stalls during GPG and JVM startup.
+          qemu-system-x86_64 \
+            -name ns8-ci \
+            -machine q35,accel=kvm \
+            -cpu host \
+            -smp ${{ inputs.vm_cpus }},sockets=1,cores=${{ inputs.vm_cpus }},threads=1 \
+            -m ${{ inputs.vm_mem }} \
+            -display none -monitor none \
+            -serial file:"${VM_DIR}/console.log" \
+            -device virtio-rng-pci \
+            -drive if=virtio,file="${VM_DIR}/guest.qcow2",format=qcow2,cache=unsafe,discard=unmap \
+            -drive if=virtio,file="${VM_DIR}/seed.iso",format=raw,readonly=on \
+            -netdev tap,id=n0,ifname="${TAP}",script=no,downscript=no,vhost=on \
+            -device virtio-net-pci,netdev=n0,mac="${VM_MAC}" \
+            -daemonize -pidfile "${VM_DIR}/qemu.pid"
+
+      - name: Wait for the VM to be ready
+        run: |
+          set -uo pipefail
+          for i in $(seq 1 120); do
+            timeout 2 bash -c "</dev/tcp/${VM_IP}/22" 2>/dev/null && ok=1 && break
+            sleep 2
+          done
+          if [ "${ok:-0}" != "1" ]; then
+            echo "::error::the guest never opened port 22"
+            tail -n 300 "${VM_DIR}/console.log" || true
+            exit 1
+          fi
+          set -e
+          # Port 22 answers as soon as sshd starts, which is before cloud-init
+          # has written root's authorized_keys. Wait for the key, not the port.
+          for i in $(seq 1 30); do
+            ssh ns8 true 2>/dev/null && break
+            sleep 4
+          done
+          ssh ns8 'cloud-init status --wait --long'
+          ssh ns8 'systemctl is-system-running --wait || true'
+          ssh ns8 'cat /etc/os-release | head -2; hostname -f; df -h /; free -m; ip -4 -o addr show'
+          # Proves routing, NAT and DNS in one second, instead of discovering a
+          # FORWARD DROP twenty minutes later as a registry timeout.
+          ssh ns8 'getent hosts registry-1.docker.io'
+
+      - name: Preflight - reach the VM over SSH from inside a container
+        run: |
+          set -euo pipefail
+          podman run --rm -v "$HOME/.ssh:/keys:ro" docker.io/library/alpine:3 sh -c \
+            "apk add --no-cache openssh-client >/dev/null && \
+             ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                 -i /keys/ns8ci root@${VM_IP} 'echo CONTAINER_TO_VM_SSH_OK; hostname -f'"
+
+      - name: Install the NS8 core
+        env:
+          # corebranch picks which install.sh is downloaded; the script still
+          # hardcodes ns8-stable as the core image, so testing another one means
+          # passing it here.
+          INSTALL_ARGS: ${{ inputs.install_args }}
+        run: |
+          set -euo pipefail
+          # INSTALL_ARGS is left unquoted on purpose: install.sh iterates over
+          # its positional arguments, so a space-separated list has to split.
+          ssh ns8 "set -e; cd /root; \
+            curl -fsSL --retry 3 -O https://raw.githubusercontent.com/NethServer/ns8-core/${{ inputs.corebranch }}/core/install.sh; \
+            bash install.sh ${INSTALL_ARGS}"
+
+      - name: Initialise the cluster
+        run: |
+          set -euo pipefail
+          # 10.5.4.0/24 overlaps neither the bridge nor the 10.0.2.0/24 that
+          # slirp4netns uses for its host-loopback entries.
+          ssh ns8 "create-cluster ${VM_IP}:55820 10.5.4.0/24 Nethesis,1234"
+          ssh ns8 'api-cli run list-installed-modules | head -c 400; echo'
+
+      - name: Run the test suite
+        id: suite
+        continue-on-error: true
+        working-directory: ${{ github.workspace }}/${{ inputs.path }}
+        env:
+          RUN_UI_TESTS: ${{ inputs.run_ui_tests }}
+          ARGS: ${{ inputs.args }}
+        run: |
+          set -o pipefail
+          if [ -n "${{ inputs.script }}" ]; then
+            script_path="${MODULE_DIR}/${{ inputs.script }}"
+          else
+            script_path="${{ github.workspace }}/.ci-actions/scripts/test-module.sh"
+          fi
+          # ARGS stays unquoted: it carries several words that robot parses itself.
+          bash "$script_path" "${VM_IP}" "${IMAGE_URL}" ${ARGS}
+
+      - name: Collect diagnostics
+        if: always()
+        run: |
+          set +e
+          mkdir -p "${MODULE_DIR}/tests/outputs/diag"
+          cd "${MODULE_DIR}/tests/outputs/diag"
+          cp "${VM_DIR}/console.log" qemu-console.log
+          { echo "image tested: ${IMAGE_URL}";
+            echo "digest: ${IMAGE_DIGEST:-unresolved}";
+            ssh ns8 'podman images --digests --format "{{.Repository}}:{{.Tag}} {{.Digest}}"';
+            ssh ns8 'api-cli run list-installed-modules'; }  > module-version.txt
+          # The guest image URL tracks .latest, so the bytes behind it move. Keep
+          # the checksum next to what it produced: the run log carries it too,
+          # but GitHub drops logs after 90 days and this bundle can be archived.
+          { echo "url: ${CLOUD_IMAGE_URL}";
+            echo "${IMAGE_ALGO}: ${IMAGE_SUM}";
+            ssh ns8 'cat /etc/os-release'; }                       > vm-os-release.txt
+          ssh ns8 'journalctl --no-pager -b'                       > vm-journal.log
+          ssh ns8 'podman images --format "{{.Repository}}:{{.Tag}} {{.Size}}"' \
+                                                                   > vm-images.txt
+          ssh ns8 'df -h; free -m; ss -lntup; systemctl --failed --no-pager' \
+                                                                   > vm-state.txt
+          ssh ns8 'for u in $(ls /home 2>/dev/null); do echo "== $u"; \
+                   runagent -m "$u" podman ps -a --format "{{.Names}} {{.Status}}"; \
+                   runagent -m "$u" journalctl --no-pager -n 200 --user; done' \
+                                                                   > vm-module-pods.txt
+          true
+
+      - name: Upload test outputs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-outputs-${{ inputs.distro }}${{ env.ARTIFACT_NAME_SUFFIX }}-${{ env.REF_SLUG }}
+          path: ${{ github.workspace }}/${{ inputs.path }}/tests/outputs
+          if-no-files-found: warn
+          retention-days: 14
+
+      # GitHub has no public API to attach an image to a comment. cml uploads the
+      # local files and rewrites the Markdown links, so the images render inline.
+      # The token needs pull-requests: write, which a called workflow cannot ask
+      # for: the caller grants it, and this step is skipped rather than failing
+      # when it did not.
+      - name: Publish the screenshots on the pull request
+        if: ${{ always() && inputs.run_ui_tests }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO_TOKEN: ${{ github.token }}
+          OUTPUT_DIR: ${{ github.workspace }}/${{ inputs.path }}/tests/outputs
+          # Branch names come from whoever opens the pull request, so never inline them.
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # workflow_run carries no pull request context: look the number up
+          pr_number="${{ github.event.pull_request.number }}"
+          if [ -z "$pr_number" ]; then
+            branch="${HEAD_BRANCH}"
+            pr_number=$(gh pr list --repo "${{ github.repository }}" --head "$branch" \
+                          --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          fi
+          if [ -z "$pr_number" ]; then
+            echo "No open pull request for this ref: nothing to comment"
+            exit 0
+          fi
+
+          mapfile -d '' shots < <(find "${OUTPUT_DIR}" -type f \
+            \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) \
+            -print0 2>/dev/null | sort -z)
+          if [ ${#shots[@]} -eq 0 ]; then
+            echo "No image under ${OUTPUT_DIR}: nothing to comment"
+            exit 0
+          fi
+
+          npm install --location=global @dvcorg/cml
+          {
+            echo "### Interface of \`${{ inputs.distro }}\`"
+            echo
+            mkdir -p shots
+            n=0
+            for f in "${shots[@]}"; do
+              name=$(basename "${f%.*}")
+              # cml only uploads links it can parse, and a space ends a Markdown link.
+              # The counter keeps two images with the same name apart.
+              n=$((n + 1))
+              link="shots/${n}-$(basename "${f// /_}")"
+              cp "$f" "$link"
+              echo "**${name//_/ }**"
+              echo
+              echo "![$(basename "$link")](${link})"
+              echo
+            done
+          } > comment.md
+          cml comment create --target=pr/$pr_number \
+            --repo="https://github.com/${{ github.repository }}" comment.md
+
+      - name: Debug shell
+        if: ${{ steps.suite.outcome == 'failure' && inputs.debug_shell }}
+        uses: mxschmitt/action-tmate@v3
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
+
+      - name: Shut the VM down
+        if: always()
+        run: |
+          ssh ns8 'systemctl poweroff' || true
+          sleep 10
+          kill "$(cat ${VM_DIR}/qemu.pid)" 2>/dev/null || true
+
+      - name: Report the result on the tested commit
+        if: ${{ always() && env.STATUS_SHA != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.suite.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Anything but a suite verdict means the node never got that far.
+          case "${OUTCOME}" in
+            success) state=success ;;
+            failure) state=failure ;;
+            *) state=error ;;
+          esac
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${STATUS_SHA}" \
+            -f state="${state}" -f context="${STATUS_CONTEXT}" \
+            -f description="${STATUS_DESCRIPTION}" \
+            -f target_url="${RUN_URL}" > /dev/null
+
+      - name: Fail the job if the suite failed
+        if: ${{ steps.suite.outcome == 'failure' }}
+        run: exit 1

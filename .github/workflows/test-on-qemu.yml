@@ -115,7 +115,6 @@ on:
 
 jobs:
   test-module:
-    name: qemu
     runs-on: ${{ inputs.runs_on }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
 

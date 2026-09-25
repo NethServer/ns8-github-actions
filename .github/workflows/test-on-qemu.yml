@@ -709,11 +709,15 @@ jobs:
           {
             echo "### Interface of \`${{ inputs.distro }}\`"
             echo
+            mkdir -p shots
             for f in "${shots[@]}"; do
               name=$(basename "${f%.*}")
+              # cml only uploads links it can parse, and a space ends a Markdown link.
+              link="shots/$(basename "${f// /_}")"
+              cp "$f" "$link"
               echo "**${name//_/ }**"
               echo
-              echo "![$(basename "$f")]($f)"
+              echo "![$(basename "$link")](${link})"
               echo
             done
           } > comment.md

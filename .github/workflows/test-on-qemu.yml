@@ -133,6 +133,30 @@ jobs:
         with:
           ref: ${{ inputs.repo_ref }}
 
+      # Under workflow_run the run is attached to the default branch, so the pull
+      # request never shows it. A commit status on the tested commit does.
+      - name: Mark the tested commit as pending
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISTRO: ${{ inputs.distro }}
+          SUFFIX: ${{ inputs.artifact_suffix }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # repo_ref may be a branch name, and the statuses API wants a SHA.
+          sha=$(git rev-parse HEAD)
+          leg="${DISTRO}${SUFFIX:+-${SUFFIX}}"
+          {
+            echo "STATUS_SHA=${sha}"
+            echo "STATUS_CONTEXT=continuous-integration/qemu/${leg}"
+            echo "STATUS_DESCRIPTION=Test on QEMU (${DISTRO}${SUFFIX:+, ${SUFFIX}})"
+          } >> "${GITHUB_ENV}"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${sha}" \
+            -f state=pending -f context="continuous-integration/qemu/${leg}" \
+            -f description="Test on QEMU (${DISTRO}${SUFFIX:+, ${SUFFIX}})" \
+            -f target_url="${RUN_URL}" > /dev/null
+
       - name: Check out the shared test runner
         if: ${{ inputs.script == '' }}
         uses: actions/checkout@v7
@@ -709,6 +733,26 @@ jobs:
           ssh ns8 'systemctl poweroff' || true
           sleep 10
           kill "$(cat ${VM_DIR}/qemu.pid)" 2>/dev/null || true
+
+      - name: Report the result on the tested commit
+        if: ${{ always() && env.STATUS_SHA != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.suite.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Anything but a suite verdict means the node never got that far.
+          case "${OUTCOME}" in
+            success) state=success ;;
+            failure) state=failure ;;
+            *) state=error ;;
+          esac
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${STATUS_SHA}" \
+            -f state="${state}" -f context="${STATUS_CONTEXT}" \
+            -f description="${STATUS_DESCRIPTION}" \
+            -f target_url="${RUN_URL}" > /dev/null
 
       - name: Fail the job if the suite failed
         if: ${{ steps.suite.outcome == 'failure' }}

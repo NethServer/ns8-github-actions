@@ -15,7 +15,7 @@ same repository one day, and two `.github/workflows/test-module.yml` cannot.
 - [Moving a module off DigitalOcean](#moving-a-module-off-digitalocean)
 - [Inputs](#inputs)
 - [Scenarios](#scenarios)
-- [The pull request comment and its token](#the-pull-request-comment-and-its-token)
+- [The pull request status, comment and their token](#the-pull-request-status-comment-and-their-token)
 - [What a suite may rely on](#what-a-suite-may-rely-on)
 
 ## Moving a module off DigitalOcean
@@ -30,6 +30,7 @@ accepted, and ignored, so a caller that keeps it works unchanged.
 +    permissions:
 +      contents: read
 +      pull-requests: write
++      statuses: write
 -    uses: NethServer/ns8-github-actions/.github/workflows/test-module.yml@v1
 +    uses: NethServer/ns8-github-actions/.github/workflows/test-module-qemu.yml@v1
      with:
@@ -39,8 +40,9 @@ accepted, and ignored, so a caller that keeps it works unchanged.
 -      do_token: ${{ secrets.do_token }}
 ```
 
-The `permissions` block is the one addition, and only because screenshots are
-published as a comment. See [below](#the-pull-request-comment-and-its-token).
+The `permissions` block is the one addition. It lets the wrapper report each
+leg on the pull request and post the screenshots as a comment. See
+[below](#the-pull-request-status-comment-and-their-token).
 
 ## Inputs
 
@@ -160,11 +162,19 @@ install_args: ${{ matrix.scenario == 'update' && inputs.install_args_update || i
 Not implemented: no module in this repository's own CI needs it yet, and it
 can only be exercised against a real bundled-core module, which none here are.
 
-## The pull request comment and its token
+## The pull request status, comment and their token
 
-The screenshots are uploaded by `cml` and posted as a comment, which needs a
-token allowed to write pull requests. A called workflow cannot hold more than
-its caller, so the module's own job grants it:
+Under `workflow_run` the run belongs to the default branch, so the pull request
+does not list it. Each leg therefore sets a commit status on the tested commit,
+`continuous-integration/qemu/<distro>-<scenario>`, pending while it runs and
+then success, failure or error. The pull request shows one line per leg,
+linked to the run. That needs `statuses: write`.
+
+The screenshots are uploaded by `cml` and posted as a comment, which needs
+`pull-requests: write`.
+
+A called workflow cannot hold more than its caller, so the module's own job
+grants both:
 
 ```yaml
 jobs:
@@ -172,6 +182,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      statuses: write
 ```
 
 A NethServer module caller can skip this block when its repository default
@@ -179,10 +190,10 @@ workflow permission is `write`, since every job then already holds it. That
 also hands a read/write token to every other workflow in the repository, next
 to a `workflow_run` chain that checks out and runs the code of a pull request.
 Granting it on the one job that needs it is narrower, and it is why this
-wrapper asks for the three lines instead of asking you to change a repository
+wrapper asks for the four lines instead of asking you to change a repository
 setting.
 
-Without the grant the job still passes: the step skips rather than failing.
+Without the grant the job still passes: both steps are skipped rather than failing.
 
 ## What a suite may rely on
 

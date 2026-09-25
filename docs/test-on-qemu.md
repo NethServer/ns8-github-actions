@@ -337,6 +337,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      statuses: write
     strategy:
       fail-fast: false
       matrix:
@@ -364,6 +365,15 @@ to capture on every run instead.
 - **`workflow_run` reads the default branch.** A `permissions:` block added on a
   feature branch does not apply to that branch's own run; it has to land on the
   default branch first.
+
+## The status on the pull request
+
+Each leg sets a commit status on the tested commit, named
+`continuous-integration/qemu/<distro>`, plus `-<artifact_suffix>` when given.
+It is pending while the leg runs, then success or failure from the suite, or
+error when the node never got as far as the suite. Under `workflow_run` this is
+the only trace of the test on the pull request. It needs `statuses: write` on
+the calling job, and is skipped without it.
 
 ## When it fails
 

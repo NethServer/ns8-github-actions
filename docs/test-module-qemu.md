@@ -44,6 +44,17 @@ The `permissions` block is the one addition. It lets the wrapper report each
 leg on the pull request and post the screenshots as a comment. See
 [below](#the-pull-request-status-comment-and-their-token).
 
+Also worth adding at the top of the caller file, next to `name:`:
+
+```yaml
+run-name: "Test ${{ github.event.workflow_run.head_branch || github.ref_name }} on QEMU"
+```
+
+Under `workflow_run` every run belongs to the default branch, so the Actions
+list shows them all as the workflow name, with nothing saying what was tested.
+A called workflow cannot set its caller's `run-name`, so this line lives in the
+module.
+
 ## Inputs
 
 Identical to the Nethesis wrapper:

@@ -6,7 +6,7 @@ on:
       runner-version:
         description: 'The version of the runner'
         required: false
-        default: 'ubuntu-latest'
+        default: 'ubuntu-26.04'
         type: string
       extra-cache-paths:
         description: 'Additional file paths to cache between runs (multiline, one path per line)'

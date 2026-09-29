@@ -206,6 +206,17 @@ do either first, and there is no module image to hand over.
 | `setup_cluster` | `true` | `false` skips the core install and `create-cluster` |
 | `coremodules` | | space-separated images of the branch under test. They reach the suite as `COREMODULES`, which passes them to `install.sh` |
 
+The core suite also asks Let's Encrypt for a certificate on the node name,
+which a private guest cannot get. `public_hostname: true` opens a Cloudflare
+quick tunnel to port 80 of the guest, with no account and no secret. The suite
+then gets the `*.trycloudflare.com` name as its node address, and the runner
+maps that name to the guest, so only Let's Encrypt goes through the tunnel. The
+tunnel terminates TLS, so traefik must use the HTTP-01 challenge.
+
+| Input | Default | |
+|---|---|---|
+| `public_hostname` | `false` | expose the guest under a public name, for suites that need a real certificate |
+
 With `image_url` empty, `scripts/test-module.sh` runs in core mode. The job
 summary then lists each core image with its digest. A module caller changes
 nothing: both inputs default to the old behaviour.
@@ -227,6 +238,7 @@ nothing: both inputs default to the old behaviour.
       path: core/
       script: ""
       coremodules: ${{ join(fromJSON(needs.ns8.outputs.modules), ' ') }}
+      public_hostname: true
 ```
 
 ### The machine

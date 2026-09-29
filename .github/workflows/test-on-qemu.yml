@@ -327,6 +327,10 @@ jobs:
             echo "::error::a module suite expects a cluster: setup_cluster: false is only for ns8-core"
             exit 1
           fi
+          if [ -z "${IMAGE_URL}" ] && [ "${SETUP_CLUSTER}" = "true" ]; then
+            echo "::error::the ns8-core suite installs the core itself: set setup_cluster: false"
+            exit 1
+          fi
           echo "IMAGE_URL=${IMAGE_URL}" >> "${GITHUB_ENV}"
           # Through env, not spliced in: a value with shell syntax would run.
           guest="${DISTRO}"

@@ -32,7 +32,7 @@ on:
 jobs:
   module:
     name: "Get module info"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       owner: ${{ steps.owner.outputs.name }}
       name: ${{ steps.name.outputs.name }}

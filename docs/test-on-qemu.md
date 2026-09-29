@@ -382,3 +382,9 @@ directory with the QEMU serial console, the guest journal, its
 `/etc/os-release`, the images it pulled, listening sockets, and `podman ps` for
 every module user. That is usually enough to find the cause without opening a shell.
 `debug_shell: true` gives you a tmate session when it is not.
+
+Before the core is installed, the job checks that the guest image leaves free
+the ports NS8 modules publish: DNS, DHCP and TFTP, mail, and Active Directory.
+A port already taken shows up as a warning and in the job summary, with the
+process holding it. It is not an error, since most modules need none of these
+ports, but a mail, dnsmasq or Samba module that crashes later starts there.

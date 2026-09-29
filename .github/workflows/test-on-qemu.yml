@@ -593,6 +593,30 @@ jobs:
              ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                  -i /keys/ns8ci root@${VM_IP} 'echo CONTAINER_TO_VM_SSH_OK; hostname -f'"
 
+      # A module that publishes one of these ports crashes when the guest image
+      # already listens on it. Only a warning: most modules need none of them.
+      - name: Check the ports NS8 modules publish are free
+        run: |
+          set -euo pipefail
+          ports="53 67 69 25 465 587 110 995 143 993 4190 88 135 139 389 445 464 636 3268 3269"
+          taken=$(ssh ns8 'ss -lntupH' | awk -v ports="${ports}" '
+            BEGIN { n = split(ports, p, " "); for (i = 1; i <= n; i++) want[p[i]] = 1 }
+            { port = $5; sub(/.*:/, "", port); if (port in want) print $1, $5, $7 }')
+          if [ -z "${taken}" ]; then
+            echo "No NS8 port is in use on the guest"
+            exit 0
+          fi
+          {
+            echo "### Ports already in use on the guest"
+            echo
+            echo "| proto | address | process |"
+            echo "|---|---|---|"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          while read -r proto addr proc; do
+            echo "::warning::${proto} ${addr} is already in use on the guest by ${proc}"
+            echo "| ${proto} | \`${addr}\` | \`${proc}\` |" >> "${GITHUB_STEP_SUMMARY}"
+          done <<< "${taken}"
+
       - name: Install the NS8 core
         env:
           # corebranch picks which install.sh is downloaded; the script still

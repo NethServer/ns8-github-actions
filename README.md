@@ -8,6 +8,8 @@ Reusable automation scripts for [NethServer 8](https://github.com/NethServer/ns8
 |---|---|
 | `test-module.yml` | Main entry point for module testing. Orchestrates `check-ui-tests-needed` and then runs tests on pre-provisioned infrastructure. |
 | `test-on-digitalocean-infra.yml` | Provisions one or more NS8 clusters on DigitalOcean, runs the test script, and tears everything down. |
+| [`test-module-qemu.yml`](docs/test-module-qemu.md) | Drop-in replacement for `test-module.yml` that runs on a throwaway QEMU node instead of DigitalOcean. Needs no secret, so it also works on forks. |
+| [`test-on-qemu.yml`](docs/test-on-qemu.md) | One leg of `test-module-qemu.yml`: boots a Rocky 9 or Debian guest under KVM on the runner, creates a single-node cluster and runs the module suite against it. |
 | `check-ui-tests-needed.yml` | Decides whether UI tests should run based on a configurable strategy (`on_ui_change`, `on_renovate_ui_change`, `never`) and detected file changes. |
 | `publish-branch.yml` | Builds and publishes module container images. |
 | `module-info.yml` | Resolves and exposes module metadata (name, tag, full image name, image list) as workflow outputs. |

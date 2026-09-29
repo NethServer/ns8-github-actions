@@ -48,11 +48,6 @@ on:
         type: boolean
         default: true
         description: "Install the core and create the cluster before the suite. ns8-core sets it to false, since its suite does both"
-      public_hostname:
-        required: false
-        type: boolean
-        default: false
-        description: "Expose port 80 of the guest under a public *.trycloudflare.com name and hand that name to the suite as the node address, so Let's Encrypt can issue a certificate over HTTP-01"
       args:
         required: false
         type: string
@@ -677,45 +672,6 @@ jobs:
           ssh ns8 "create-cluster ${VM_IP}:55820 10.5.4.0/24 Nethesis,1234"
           ssh ns8 'api-cli run list-installed-modules | head -c 400; echo'
 
-      - name: Expose the guest under a public name
-        if: inputs.public_hostname
-        env:
-          CLOUDFLARED_IMAGE: "docker.io/cloudflare/cloudflared:2026.9.3@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c"
-        run: |
-          set -euo pipefail
-          # A quick tunnel needs no account and no secret, so this still works
-          # on a fork. trycloudflare.com is on the Public Suffix List, which
-          # gives every tunnel its own Let's Encrypt rate limits.
-          # Plain HTTP: the tunnel terminates TLS, so only HTTP-01 reaches traefik.
-          podman run -d --name cloudflared --network host "${CLOUDFLARED_IMAGE}" \
-            tunnel --no-autoupdate --url "http://${VM_IP}:80" > /dev/null
-          name=""
-          for i in $(seq 1 30); do
-            # api.trycloudflare.com is the service cloudflared asks, not the tunnel.
-            name=$(podman logs cloudflared 2>&1 | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' \
-                   | grep -v '//api\.' | head -n1 | sed 's#https://##' || true)
-            [ -n "${name}" ] && break
-            sleep 2
-          done
-          if [ -z "${name}" ]; then
-            echo "::error::cloudflared gave no public name"
-            podman logs cloudflared
-            exit 1
-          fi
-          # Let's Encrypt resolves the name itself: wait until public DNS has it.
-          resolved=""
-          for i in $(seq 1 30); do
-            resolved=$(dig +short @1.1.1.1 "${name}" || true)
-            [ -n "${resolved}" ] && break
-            sleep 2
-          done
-          [ -n "${resolved}" ] || echo "::warning::${name} does not resolve yet on 1.1.1.1"
-          # Everything but Let's Encrypt goes straight to the guest, so the
-          # suite checks the certificate traefik serves, not the Cloudflare one.
-          echo "${VM_IP} ${name}" | sudo tee -a /etc/hosts > /dev/null
-          echo "LEADER_ADDR=${name}" >> "${GITHUB_ENV}"
-          printf '\nPublic name: `%s`\n' "${name}" >> "${GITHUB_STEP_SUMMARY}"
-
       - name: Run the test suite
         id: suite
         continue-on-error: true
@@ -733,7 +689,7 @@ jobs:
           fi
           # An empty IMAGE_URL would still count as an argument, and the
           # script reads its second argument as the image unless it is a robot option.
-          target=("${LEADER_ADDR:-${VM_IP}}")
+          target=("${VM_IP}")
           [ -n "${IMAGE_URL}" ] && target+=("${IMAGE_URL}")
           # ARGS stays unquoted: it carries several words that robot parses itself.
           bash "$script_path" "${target[@]}" ${ARGS}
@@ -747,7 +703,6 @@ jobs:
           mkdir -p "${MODULE_DIR}/tests/outputs/diag"
           cd "${MODULE_DIR}/tests/outputs/diag"
           cp "${VM_DIR}/console.log" qemu-console.log
-          podman logs cloudflared > cloudflared.log 2>&1 || rm -f cloudflared.log
           { echo "image tested: ${IMAGE_URL:-${COREMODULES}}";
             echo "digest: ${IMAGE_DIGEST:-unresolved}";
             ssh ns8 'podman images --digests --format "{{.Repository}}:{{.Tag}} {{.Digest}}"';

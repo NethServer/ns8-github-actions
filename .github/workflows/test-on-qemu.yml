@@ -680,31 +680,26 @@ jobs:
       - name: Expose the guest under a public name
         if: inputs.public_hostname
         env:
-          CLOUDFLARED_VERSION: "2026.9.3"
-          CLOUDFLARED_SHA256: 77e26d8d900e0b8469f416239d14b5f296525fdf79fee6f511ef55609e3fbac2
+          CLOUDFLARED_IMAGE: "docker.io/cloudflare/cloudflared:2026.9.3@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c"
         run: |
           set -euo pipefail
           # A quick tunnel needs no account and no secret, so this still works
           # on a fork. trycloudflare.com is on the Public Suffix List, which
           # gives every tunnel its own Let's Encrypt rate limits.
-          curl -fsSL --retry 3 -o "${VM_DIR}/cloudflared" \
-            "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64"
-          echo "${CLOUDFLARED_SHA256}  ${VM_DIR}/cloudflared" | sha256sum -c -
-          chmod +x "${VM_DIR}/cloudflared"
           # Plain HTTP: the tunnel terminates TLS, so only HTTP-01 reaches traefik.
-          nohup "${VM_DIR}/cloudflared" tunnel --no-autoupdate --url "http://${VM_IP}:80" \
-            > "${VM_DIR}/cloudflared.log" 2>&1 &
+          podman run -d --name cloudflared --network host "${CLOUDFLARED_IMAGE}" \
+            tunnel --no-autoupdate --url "http://${VM_IP}:80" > /dev/null
           name=""
           for i in $(seq 1 30); do
             # api.trycloudflare.com is the service cloudflared asks, not the tunnel.
-            name=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "${VM_DIR}/cloudflared.log" \
+            name=$(podman logs cloudflared 2>&1 | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' \
                    | grep -v '//api\.' | head -n1 | sed 's#https://##' || true)
             [ -n "${name}" ] && break
             sleep 2
           done
           if [ -z "${name}" ]; then
             echo "::error::cloudflared gave no public name"
-            cat "${VM_DIR}/cloudflared.log"
+            podman logs cloudflared
             exit 1
           fi
           # Let's Encrypt resolves the name itself: wait until public DNS has it.
@@ -752,7 +747,7 @@ jobs:
           mkdir -p "${MODULE_DIR}/tests/outputs/diag"
           cd "${MODULE_DIR}/tests/outputs/diag"
           cp "${VM_DIR}/console.log" qemu-console.log
-          [ -f "${VM_DIR}/cloudflared.log" ] && cp "${VM_DIR}/cloudflared.log" .
+          podman logs cloudflared > cloudflared.log 2>&1 || rm -f cloudflared.log
           { echo "image tested: ${IMAGE_URL:-${COREMODULES}}";
             echo "digest: ${IMAGE_DIGEST:-unresolved}";
             ssh ns8 'podman images --digests --format "{{.Repository}}:{{.Tag}} {{.Digest}}"';

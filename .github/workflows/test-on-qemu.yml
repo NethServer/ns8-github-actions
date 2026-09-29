@@ -466,6 +466,13 @@ jobs:
                     rm -f /etc/resolv.conf
                     printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
                 fi
+                # The image boots once under another machine-id and leaves a runtime
+                # journal behind. The core would then point promtail at
+                # /run/log/journal, where nothing new arrives.
+                if [ -d "/var/log/journal/\$(cat /etc/machine-id)" ]; then
+                    journalctl --flush
+                    rm -rf /run/log/journal/*
+                fi
                 # Debian names the unit ssh.service, Rocky sshd.service.
                 systemctl restart ssh 2>/dev/null || systemctl restart sshd
 

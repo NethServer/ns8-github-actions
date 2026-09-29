@@ -732,7 +732,7 @@ jobs:
             script_path="${{ github.workspace }}/.ci-actions/scripts/test-module.sh"
           fi
           # An empty IMAGE_URL would still count as an argument, and the
-          # script picks its core or module mode from their number.
+          # script reads its second argument as the image unless it is a robot option.
           target=("${LEADER_ADDR:-${VM_IP}}")
           [ -n "${IMAGE_URL}" ] && target+=("${IMAGE_URL}")
           # ARGS stays unquoted: it carries several words that robot parses itself.

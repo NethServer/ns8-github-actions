@@ -15,11 +15,14 @@ LEADER_NODE="${1:?missing LEADER_NODE argument}"
 # Optional second argument: the module image URL.
 # If omitted, the script runs in "core" mode (testing ns8-core itself).
 # If provided, the script runs in "module" mode (testing a module).
-IMAGE_URL="${2:-}"
-if [ -n "${IMAGE_URL}" ]; then
+# Robot options start with a dash and an image URL never does, so core mode
+# still works when robot options follow the leader node.
+if [ -n "${2:-}" ] && [[ $2 != -* ]]; then
+    IMAGE_URL="$2"
     mode="module"
     shift 2
 else
+    IMAGE_URL=""
     mode="core"
     shift 1
 fi

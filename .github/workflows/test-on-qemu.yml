@@ -42,6 +42,11 @@ on:
         type: string
         default: ""
         description: "Extra arguments forwarded to robot, such as `-v SCENARIO:update`"
+      status_suffix:
+        required: false
+        type: string
+        default: ""
+        description: "Extra segment in the commit status name, after the distro. Keep it the same from one run to the next, or an old status stays on the commit"
       artifact_suffix:
         required: false
         type: string
@@ -143,12 +148,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DISTRO: ${{ inputs.distro }}
           SUFFIX: ${{ inputs.artifact_suffix }}
+          STATUS_SUFFIX: ${{ inputs.status_suffix }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           # repo_ref may be a branch name, and the statuses API wants a SHA.
           sha=$(git rev-parse HEAD)
-          leg="${DISTRO}${SUFFIX:+-${SUFFIX}}"
+          leg="${DISTRO}${STATUS_SUFFIX:+-${STATUS_SUFFIX}}"
           {
             echo "STATUS_SHA=${sha}"
             echo "STATUS_CONTEXT=continuous-integration/qemu/${leg}"

@@ -52,11 +52,6 @@ on:
         type: string
         default: ""
         description: "Extra segment appended to the test-outputs artifact name and shown next to the guest in the job summary. A caller matrixing on more than distro, such as a scenario, sets it, or two legs upload same-named artifacts and their summaries read identically"
-      update_from:
-        required: false
-        type: string
-        default: ""
-        description: "Baseline image an update scenario starts from, shown in the job summary. Purely informational: robot still receives it through `args`, this does not act on anything by itself"
       ci_actions_ref:
         required: false
         type: string
@@ -308,7 +303,6 @@ jobs:
           IMAGE_URL: ${{ inputs.image_url }}
           DISTRO: ${{ inputs.distro }}
           ARTIFACT_SUFFIX: ${{ inputs.artifact_suffix }}
-          UPDATE_FROM: ${{ inputs.update_from }}
         run: |
           set -uo pipefail
           echo "IMAGE_URL=${IMAGE_URL}" >> "${GITHUB_ENV}"
@@ -341,7 +335,6 @@ jobs:
             echo "| image | \`${IMAGE_URL}\` |"
             [ -n "${digest}" ] && echo "| digest | \`${digest}\` |"
             echo "| guest | ${guest} |"
-            [ -n "${UPDATE_FROM}" ] && echo "| update from | \`${UPDATE_FROM}\` |"
           } >> "${GITHUB_STEP_SUMMARY}"
           echo "IMAGE_DIGEST=${digest}" >> "${GITHUB_ENV}"
           echo "ARTIFACT_NAME_SUFFIX=${artifact_name_suffix}" >> "${GITHUB_ENV}"

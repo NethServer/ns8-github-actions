@@ -47,12 +47,7 @@ on:
         required: false
         type: string
         default: '["install","update"]'
-        description: "JSON array. `install` tests the image on a clean node, `update` upgrades the last release to it. The suite decides what each one checks through $SCENARIO"
-      update_from:
-        required: false
-        type: string
-        default: ""
-        description: "Tag the update scenario starts from. Empty resolves the newest non-prerelease release, then falls back to latest"
+        description: "JSON array. `install` tests the image on a clean node, `update` upgrades the NS8 stable release to it. The suite decides what each one checks through $SCENARIO"
       corebranch:
         required: false
         type: string
@@ -116,7 +111,6 @@ jobs:
     runs-on: ${{ inputs.runs_on }}
     outputs:
       include: ${{ steps.plan.outputs.include }}
-      update: ${{ steps.plan.outputs.update }}
       image: ${{ steps.plan.outputs.image }}
     steps:
       - uses: actions/checkout@v7
@@ -148,48 +142,15 @@ jobs:
             | map(. + {key: (if [.distro] | inside($shared) then .scenario else "" end)})
             | to_entries | map(.value + {ui: (.key == $ui)})')
           echo "include=${include}" >> "${GITHUB_OUTPUT}"
-          echo "update=$(jq 'index("update") != null' <<<"${SCENARIOS}")" >> "${GITHUB_OUTPUT}"
           echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
           echo "Legs: ${include}"
 
-  # An app module is installed by its own suite, so the baseline it upgrades
-  # from has to be named here rather than seeded by install.sh.
-  baseline:
-    if: ${{ needs.plan.outputs.update == 'true' }}
-    needs: [module, plan]
-    runs-on: ${{ inputs.runs_on }}
-    outputs:
-      image: ${{ steps.resolve.outputs.image }}
-    steps:
-      - id: resolve
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EXPLICIT_TAG: ${{ inputs.update_from }}
-          IMAGE: ${{ format('ghcr.io/{0}/{1}', needs.module.outputs.owner, inputs.image_name != '' && inputs.image_name || needs.module.outputs.name) }}
-        run: |
-          set -euo pipefail
-          if [ -n "${EXPLICIT_TAG}" ]; then
-            tag="${EXPLICIT_TAG}"
-          else
-            # No release at all means the module never shipped: latest is the
-            # only baseline there is.
-            tag=$(gh release list --repo "${{ github.repository }}" \
-                    --exclude-pre-releases --exclude-drafts \
-                    --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || true)
-            tag="${tag:-latest}"
-          fi
-          echo "image=${IMAGE}:${tag}" >> "${GITHUB_OUTPUT}"
-          echo "Update scenario starts from ${IMAGE}:${tag}"
-
   test:
-    needs: [module, check_ui_tests_needed, plan, baseline]
-    # baseline is legitimately skipped absent an update leg, but not failed:
-    # that would reach robot as an empty -v UPDATE_FROM:.
+    needs: [module, check_ui_tests_needed, plan]
     if: ${{ always()
             && needs.module.result == 'success'
             && needs.check_ui_tests_needed.result == 'success'
-            && needs.plan.result == 'success'
-            && (needs.baseline.result == 'success' || needs.baseline.result == 'skipped') }}
+            && needs.plan.result == 'success' }}
     # github.ref is the default branch under workflow_run, so it cannot key this.
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref }}-${{ matrix.distro }}-${{ matrix.key }}
@@ -214,13 +175,10 @@ jobs:
       script: ${{ inputs.script }}
       ci_actions_ref: ${{ inputs.ci_actions_ref }}
       # Empty for a module's own script: it was not written to expect these.
-      args: ${{ inputs.script != '' && ''
-                || format('-v SCENARIO:{0}{1}', matrix.scenario,
-                     matrix.scenario == 'update' && format(' -v UPDATE_FROM:{0}', needs.baseline.outputs.image) || '') }}
+      args: ${{ inputs.script != '' && '' || format('-v SCENARIO:{0}', matrix.scenario) }}
       # Names the scenario in the artifact and summary, since it changes from one run to the next.
       artifact_suffix: ${{ matrix.scenario }}
       status_suffix: ${{ matrix.key }}
-      update_from: ${{ matrix.scenario == 'update' && needs.baseline.outputs.image || '' }}
       run_ui_tests: ${{ matrix.ui
                         && needs.check_ui_tests_needed.outputs.ui_tests_needed == 'true' }}
       corebranch: ${{ inputs.corebranch }}

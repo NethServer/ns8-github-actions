@@ -97,6 +97,7 @@ lines carry prose, not keys: delete them rather than uncomment them.
       # path: ""                       # subdirectory, when the module is not at the root
       # ci_actions_ref: v1             # ref this repository is read at, when script is empty
       # args: ""                       # extra arguments forwarded to robot
+      # status_suffix: ""              # extra segment in the commit status name, stable across runs
       # artifact_suffix: ""            # extra segment naming a leg beyond distro
       # update_from: ""                # baseline an update scenario started from, for the summary
       # --- the machine
@@ -191,6 +192,7 @@ the dev script, which then installs stable anyway.
 | `path` | | subdirectory holding the module, when it is not at the repository root |
 | `ci_actions_ref` | `v1` | ref this repository is read at for the shared runner, when `script` is empty. Testing a branch of `ns8-github-actions` means naming it here too, since a reusable workflow is handed no context saying which ref called it |
 | `args` | | extra arguments forwarded to robot, such as `-v SCENARIO:update` |
+| `status_suffix` | | extra segment in the commit status name, after the distro. Keep it stable from one run to the next, or an old status stays on the commit |
 | `artifact_suffix` | | extra segment in the `test-outputs` artifact name and next to `guest` in the job summary. A caller matrixing on more than `distro` sets it, or two legs produce a same-named artifact and summaries that read identically |
 | `update_from` | | baseline image an update scenario started from, shown in the job summary. Purely informational, robot still gets it through `args` |
 | `run_ui_tests` | `false` | reaches the script as `RUN_UI_TESTS`, and publishes the images of `tests/outputs/` on the pull request. See [Interface screenshots](#interface-screenshots) |
@@ -369,7 +371,7 @@ to capture on every run instead.
 ## The status on the pull request
 
 Each leg sets a commit status on the tested commit, named
-`continuous-integration/qemu/<distro>`, plus `-<artifact_suffix>` when given.
+`continuous-integration/qemu/<distro>`, plus `-<status_suffix>` when given.
 It is pending while the leg runs, then success or failure from the suite, or
 error when the node never got as far as the suite. Under `workflow_run` this is
 the only trace of the test on the pull request. It needs `statuses: write` on

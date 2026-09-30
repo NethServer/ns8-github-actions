@@ -14,6 +14,7 @@ same repository one day, and two `.github/workflows/test-module.yml` cannot.
 
 - [Moving a module off DigitalOcean](#moving-a-module-off-digitalocean)
 - [Inputs](#inputs)
+- [Distros and runners](#distros-and-runners)
 - [Scenarios](#scenarios)
 - [The pull request status, comment and their token](#the-pull-request-status-comment-and-their-token)
 - [What a suite may rely on](#what-a-suite-may-rely-on)
@@ -21,7 +22,8 @@ same repository one day, and two `.github/workflows/test-module.yml` cannot.
 ## Moving a module off DigitalOcean
 
 Change the path in `uses:`, and drop the `secrets:` block. The secret is still
-accepted, and ignored, so a caller that keeps it works unchanged.
+accepted, and ignored, so a caller that keeps it works unchanged. Nothing else
+changes.
 
 ```diff
  jobs:
@@ -40,8 +42,8 @@ accepted, and ignored, so a caller that keeps it works unchanged.
 -      do_token: ${{ secrets.do_token }}
 ```
 
-The `permissions` block is the one addition. It lets the wrapper report each
-leg on the pull request and post the screenshots as a comment. See
+The `permissions` block lets the wrapper report each leg on the pull request
+and post the screenshots as a comment. See
 [below](#the-pull-request-status-comment-and-their-token).
 
 Also worth adding at the top of the caller file, next to `name:`:
@@ -78,18 +80,21 @@ What to cover:
 | Input | Default | Description |
 |---|---|---|
 | `distros` | `["rocky9","debian13"]` | JSON array of guest distributions. `debian12` is also supported |
-| `scenarios` | `["install"]` | JSON array. See [Scenarios](#scenarios) |
+| `scenarios` | `["install","update"]` | JSON array. See [Scenarios](#scenarios) |
 | `update_from` | _(resolved)_ | Tag the update scenario starts from. Empty takes the newest non-prerelease release, then falls back to `latest` |
-| `ui_test_distro` | `rocky9` | Publish screenshots from this leg only |
-| `ui_test_scenario` | `install` | Publish screenshots from this scenario only |
 
 Guest and runner sizing, all forwarded to `test-on-qemu.yml` unchanged:
 `corebranch`, `install_args`, `cloud_image_url`, `runs_on`, `vm_mem`,
 `vm_cpus`, `disk_size`, `timeout_minutes`. See
 [its own documentation](test-on-qemu.md#inputs) for what each one does.
 
-`distros` and `scenarios` multiply, so pass `scenarios: '["install","update"]'`
-only once the suite is ready for it: see [Scenarios](#scenarios) for why.
+## Distros and runners
+
+Each leg is one scenario on one distro, and takes one runner. A run has one leg
+per distro, and the distro of each scenario changes with the run number.
+
+Screenshots come from the rocky9 leg, after an install or an upgrade depending
+on the run.
 
 ## Scenarios
 
@@ -99,13 +104,10 @@ against the upgraded module. It catches what a clean install cannot: a
 configuration that a migration drops, an `update-module` that fails, a volume or
 a secret that does not survive the version change.
 
-`update` is opt-in, disabled by default. Robot Framework does not fail on an
-unused `-v`: a suite that never reads `$SCENARIO` would not error, it would run
-the exact install path twice under a different label, doubling the CI cost for
-no extra coverage and no visible sign that it happened. Ask for
-`scenarios: '["install","update"]'` only once `tests/` has an
-`IF '${SCENARIO}' == 'update'` branch to act on it, following the example
-below.
+The suite decides what each scenario checks, through `${SCENARIO}`. When
+`tests/` never reads it, the update leg is dropped and every distro runs
+install, with a notice in the run. Add an `IF '${SCENARIO}' == 'update'`
+branch, as in the example below, to get the upgrade test.
 
 The scenario reaches the suite as `-v SCENARIO:install|update`, and the update
 leg also gets `-v UPDATE_FROM:<image>`.
@@ -143,41 +145,18 @@ Check the module survives the update
 Configure the module before the update and read the configuration back after
 it. That comparison is the coverage the update leg buys.
 
-### Not yet supported: a module bundled into the core
+### Modules that ship with the core
 
-The pattern above is for an app module that installs itself, `add-module`
-inside its own suite. `NethServer/ns8-metrics` is shaped differently: `metrics1`
-ships as part of the core, under a fixed instance name, with no `add-module`
-call anywhere in its suite. Its `install` scenario instead needs the image
-under test injected while the core itself is installed:
-
-```yaml
-# NethServer/ns8-github-actions, scenario-conditional
-coremodules: ${{ matrix.scenario == 'install' && format('ghcr.io/{0}/{1}:{2}', owner, name, tag) || '' }}
-```
-
-`install_args` here forwards straight into `install.sh` the same way, but as
-one static string for every leg, not conditional on `scenario`. Passing the
-image under test through it would make the `install` leg correct and the
-`update` leg a no-op: `metrics1` would already be running that image before
-`update-module` runs, upgrading it to itself. Leaving it empty makes `install`
-test the stock core version instead of the image under test.
-
-Fixing this needs a second input, `install_args_update`, and the same ternary
-`args` and `update_from` already use:
-
-```yaml
-install_args: ${{ matrix.scenario == 'update' && inputs.install_args_update || inputs.install_args }}
-```
-
-Not implemented: no module in this repository's own CI needs it yet, and it
-can only be exercised against a real bundled-core module, which none here are.
+Such a module is installed by `install.sh`, with no `add-module` in its suite.
+The install leg passes the image under test to `install.sh`, the update leg
+does not, so the suite upgrades the stable module. For any other module this
+only makes `add-module` pick the image under test.
 
 ## The pull request status, comment and their token
 
 Under `workflow_run` the run belongs to the default branch, so the pull request
 does not list it. Each leg therefore sets a commit status on the tested commit,
-`continuous-integration/qemu/<distro>-<scenario>`, pending while it runs and
+`continuous-integration/qemu/<distro>`, pending while it runs and
 then success, failure or error. The pull request shows one line per leg,
 linked to the run. That needs `statuses: write`.
 

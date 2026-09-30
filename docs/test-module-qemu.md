@@ -1,8 +1,7 @@
 # test-module-qemu.yml
 
 What a module should call: it gathers the module information, decides whether
-the UI tests are worth running, resolves the baseline for the update scenario,
-and fans out over distributions and scenarios, calling
+the UI tests are worth running, and fans out over distributions and scenarios, calling
 [`test-on-qemu.yml`](test-on-qemu.md) once per leg. Call that one directly only
 when you need a single leg under your own conditions.
 
@@ -81,7 +80,6 @@ What to cover:
 |---|---|---|
 | `distros` | `["rocky9","debian13"]` | JSON array of guest distributions. `debian12` is also supported |
 | `scenarios` | `["install","update"]` | JSON array. See [Scenarios](#scenarios) |
-| `update_from` | _(resolved)_ | Tag the update scenario starts from. Empty takes the newest non-prerelease release, then falls back to `latest` |
 
 Guest and runner sizing, all forwarded to `test-on-qemu.yml` unchanged:
 `corebranch`, `install_args`, `cloud_image_url`, `runs_on`, `vm_mem`,
@@ -98,9 +96,9 @@ on the run.
 
 ## Scenarios
 
-`install` runs the suite against the image on a clean node. `update` installs a
-baseline first, upgrades to the image under test, and then runs the same suite
-against the upgraded module. It catches what a clean install cannot: a
+`install` runs the suite against the image on a clean node. `update` installs
+the NS8 stable release first, upgrades it to the image under test, and runs
+the same suite against the upgraded module. It catches what a clean install cannot: a
 configuration that a migration drops, an `update-module` that fails, a volume or
 a secret that does not survive the version change.
 
@@ -109,15 +107,9 @@ The suite decides what each scenario checks, through `${SCENARIO}`. When
 install, with a notice in the run. Add an `IF '${SCENARIO}' == 'update'`
 branch, as in the example below, to get the upgrade test.
 
-The scenario reaches the suite as `-v SCENARIO:install|update`, and the update
-leg also gets `-v UPDATE_FROM:<image>`.
-
-`ns8-github-actions` needs no `UPDATE_FROM` because its update leg tests core
-modules, which `install.sh` seeds at the stable version. An app module is
-installed by its own suite, so the baseline has to be named. Handle it like
-this, leaving `UPDATE_FROM` undefined: the CI always passes it, and a manual
-`update` run without it fails on a clear "Variable not found" rather than
-testing against a baseline nobody chose:
+The scenario reaches the suite as `-v SCENARIO:install|update`. On the update
+leg, install the module by name: NS8 then picks its stable release, the one
+users upgrade from.
 
 ```robot
 *** Variables ***
@@ -126,7 +118,7 @@ ${SCENARIO}       install
 *** Test Cases ***
 Install the module
     IF    '${SCENARIO}' == 'update'
-        ${output}  ${rc} =    Execute Command    add-module ${UPDATE_FROM} 1    return_rc=True
+        ${output}  ${rc} =    Execute Command    add-module mymodule 1    return_rc=True
     ELSE
         ${output}  ${rc} =    Execute Command    add-module ${IMAGE_URL} 1    return_rc=True
     END
@@ -200,5 +192,3 @@ The same on both CI, because both run the same `scripts/test-module.sh`:
 | UI gating | `[Tags] ui`, excluded by `--exclude ui` |
 | flaky gating | `[Tags] unstable`, tolerated by `--skiponfailure unstable` |
 | outputs | `tests/outputs/` in the module tree |
-
-`${UPDATE_FROM}` is the one addition.

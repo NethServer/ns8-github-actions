@@ -99,7 +99,6 @@ lines carry prose, not keys: delete them rather than uncomment them.
       # args: ""                       # extra arguments forwarded to robot
       # status_suffix: ""              # extra segment in the commit status name, stable across runs
       # artifact_suffix: ""            # extra segment naming a leg beyond distro
-      # update_from: ""                # baseline an update scenario started from, for the summary
       # --- the machine
       # runs_on: ubuntu-24.04          # must provide /dev/kvm
       # vm_mem: 8192                   # guest memory, MiB. 12288 is the ceiling
@@ -194,7 +193,6 @@ the dev script, which then installs stable anyway.
 | `args` | | extra arguments forwarded to robot, such as `-v SCENARIO:update` |
 | `status_suffix` | | extra segment in the commit status name, after the distro. Keep it stable from one run to the next, or an old status stays on the commit |
 | `artifact_suffix` | | extra segment in the `test-outputs` artifact name and next to `guest` in the job summary. A caller matrixing on more than `distro` sets it, or two legs produce a same-named artifact and summaries that read identically |
-| `update_from` | | baseline image an update scenario started from, shown in the job summary. Purely informational, robot still gets it through `args` |
 | `run_ui_tests` | `false` | reaches the script as `RUN_UI_TESTS`, and publishes the images of `tests/outputs/` on the pull request. See [Interface screenshots](#interface-screenshots) |
 
 ### The machine

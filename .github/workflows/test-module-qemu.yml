@@ -46,24 +46,13 @@ on:
       scenarios:
         required: false
         type: string
-        default: '["install"]'
-        description: "JSON array of scenarios. `install` tests the image on a clean node, `update` installs a baseline first and upgrades to it. Robot Framework does not error on an unused -v, so a suite that ignores $SCENARIO would silently run install twice under `update` rather than fail: opt in explicitly with `[\"install\",\"update\"]` once the suite handles it"
+        default: '["install","update"]'
+        description: "JSON array. `install` tests the image on a clean node, `update` upgrades the last release to it. The suite decides what each one checks through $SCENARIO"
       update_from:
         required: false
         type: string
         default: ""
         description: "Tag the update scenario starts from. Empty resolves the newest non-prerelease release, then falls back to latest"
-      ui_test_distro:
-        required: false
-        type: string
-        default: rocky9
-        description: "Publish screenshots from this leg only. The browser is the same everywhere, so more legs only means more comments"
-      ui_test_scenario:
-        required: false
-        type: string
-        default: install
-        description: "Publish screenshots from this scenario only"
-
       corebranch:
         required: false
         type: string
@@ -122,11 +111,52 @@ jobs:
       head_sha: ${{ github.event.workflow_run.head_sha || github.sha }}
       head_branch: ${{ github.event.workflow_run.head_branch || github.ref_name }}
 
+  plan:
+    needs: module
+    runs-on: ${{ inputs.runs_on }}
+    outputs:
+      include: ${{ steps.plan.outputs.include }}
+      update: ${{ steps.plan.outputs.update }}
+      image: ${{ steps.plan.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.module.outputs.sha }}
+          sparse-checkout: ${{ inputs.path != '' && format('{0}/tests', inputs.path) || 'tests' }}
+          sparse-checkout-cone-mode: false
+      - id: plan
+        env:
+          DISTROS: ${{ inputs.distros }}
+          SCENARIOS: ${{ inputs.scenarios }}
+          TESTS: ${{ inputs.path != '' && format('{0}/tests', inputs.path) || 'tests' }}
+          RUN_NUMBER: ${{ github.run_number }}
+          IMAGE: ${{ inputs.image_name != '' && format('ghcr.io/{0}/{1}:{2}', needs.module.outputs.owner, inputs.image_name, needs.module.outputs.tag) || needs.module.outputs.image }}
+        run: |
+          set -euo pipefail
+          # Without $SCENARIO the update leg would only install again: run install on every distro instead.
+          if ! grep -rqsi '{SCENARIO}' "${TESTS}" && jq -e 'index("update")' <<<"${SCENARIOS}" >/dev/null; then
+            echo "::notice::${TESTS} never reads \${SCENARIO}: running install on every distro instead of an update leg"
+            SCENARIOS=$(jq -c 'map(select(. != "update")) | if . == [] then ["install"] else . end' <<<"${SCENARIOS}")
+          fi
+          # One leg per distro, scenarios rotating with the run number. Screenshots come from rocky9.
+          # A leg is keyed on its distro so that the next run cancels it and overwrites its status; the scenario is added only when a distro holds two legs.
+          include=$(jq -cn --argjson d "${DISTROS}" --argjson s "${SCENARIOS}" --argjson n "${RUN_NUMBER}" '
+            [range([$d, $s] | map(length) | max) as $i
+             | {distro: $d[$i % ($d | length)], scenario: $s[($i + $n) % ($s | length)]}]
+            | ((map(.distro) | index("rocky9")) // 0) as $ui
+            | (map(.distro) | group_by(.) | map(select(length > 1)[0])) as $shared
+            | map(. + {key: (if [.distro] | inside($shared) then .scenario else "" end)})
+            | to_entries | map(.value + {ui: (.key == $ui)})')
+          echo "include=${include}" >> "${GITHUB_OUTPUT}"
+          echo "update=$(jq 'index("update") != null' <<<"${SCENARIOS}")" >> "${GITHUB_OUTPUT}"
+          echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+          echo "Legs: ${include}"
+
   # An app module is installed by its own suite, so the baseline it upgrades
   # from has to be named here rather than seeded by install.sh.
   baseline:
-    if: ${{ contains(fromJSON(inputs.scenarios), 'update') }}
-    needs: module
+    if: ${{ needs.plan.outputs.update == 'true' }}
+    needs: [module, plan]
     runs-on: ${{ inputs.runs_on }}
     outputs:
       image: ${{ steps.resolve.outputs.image }}
@@ -152,16 +182,17 @@ jobs:
           echo "Update scenario starts from ${IMAGE}:${tag}"
 
   test:
-    needs: [module, check_ui_tests_needed, baseline]
+    needs: [module, check_ui_tests_needed, plan, baseline]
     # baseline is legitimately skipped absent an update leg, but not failed:
     # that would reach robot as an empty -v UPDATE_FROM:.
     if: ${{ always()
             && needs.module.result == 'success'
             && needs.check_ui_tests_needed.result == 'success'
+            && needs.plan.result == 'success'
             && (needs.baseline.result == 'success' || needs.baseline.result == 'skipped') }}
     # github.ref is the default branch under workflow_run, so it cannot key this.
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref }}-${{ matrix.distro }}-${{ matrix.scenario }}
+      group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref }}-${{ matrix.distro }}-${{ matrix.key }}
       cancel-in-progress: true
     # Granted here because test-on-qemu.yml, called below, cannot hold more
     # than this job does.
@@ -172,12 +203,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: ${{ fromJSON(inputs.distros) }}
-        scenario: ${{ fromJSON(inputs.scenarios) }}
+        include: ${{ fromJSON(needs.plan.outputs.include) }}
     uses: ./.github/workflows/test-on-qemu.yml
     with:
       distro: ${{ matrix.distro }}
-      image_url: ${{ inputs.image_name != '' && format('ghcr.io/{0}/{1}:{2}', needs.module.outputs.owner, inputs.image_name, needs.module.outputs.tag) || needs.module.outputs.image }}
+      image_url: ${{ needs.plan.outputs.image }}
       repo_ref: ${{ needs.module.outputs.sha }}
       version_tag: ${{ needs.module.outputs.tag }}
       path: ${{ inputs.path }}
@@ -189,12 +219,13 @@ jobs:
                      matrix.scenario == 'update' && format(' -v UPDATE_FROM:{0}', needs.baseline.outputs.image) || '') }}
       # distro alone no longer names a leg uniquely, since scenario is a second matrix dimension.
       artifact_suffix: ${{ matrix.scenario }}
+      status_suffix: ${{ matrix.key }}
       update_from: ${{ matrix.scenario == 'update' && needs.baseline.outputs.image || '' }}
-      run_ui_tests: ${{ matrix.distro == inputs.ui_test_distro
-                        && matrix.scenario == inputs.ui_test_scenario
+      run_ui_tests: ${{ matrix.ui
                         && needs.check_ui_tests_needed.outputs.ui_tests_needed == 'true' }}
       corebranch: ${{ inputs.corebranch }}
-      install_args: ${{ inputs.install_args }}
+      # The update leg must start from the stable module, including one that ships with the core.
+      install_args: ${{ matrix.scenario == 'install' && format('{0} {1}', inputs.install_args, needs.plan.outputs.image) || inputs.install_args }}
       cloud_image_url: ${{ inputs.cloud_image_url }}
       runs_on: ${{ inputs.runs_on }}
       vm_mem: ${{ inputs.vm_mem }}

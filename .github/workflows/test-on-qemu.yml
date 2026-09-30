@@ -115,6 +115,8 @@ on:
 
 jobs:
   test-module:
+    # The run page lists only this last part of a nested job name.
+    name: ${{ inputs.artifact_suffix }} ${{ inputs.distro }}
     runs-on: ${{ inputs.runs_on }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
 

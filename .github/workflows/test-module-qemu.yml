@@ -217,7 +217,7 @@ jobs:
       args: ${{ inputs.script != '' && ''
                 || format('-v SCENARIO:{0}{1}', matrix.scenario,
                      matrix.scenario == 'update' && format(' -v UPDATE_FROM:{0}', needs.baseline.outputs.image) || '') }}
-      # distro alone no longer names a leg uniquely, since scenario is a second matrix dimension.
+      # Names the scenario in the artifact and summary, since it changes from one run to the next.
       artifact_suffix: ${{ matrix.scenario }}
       status_suffix: ${{ matrix.key }}
       update_from: ${{ matrix.scenario == 'update' && needs.baseline.outputs.image || '' }}

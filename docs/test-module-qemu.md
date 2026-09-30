@@ -79,6 +79,7 @@ What to cover:
 |---|---|---|
 | `distros` | `["rocky9","debian13"]` | JSON array of guest distributions. `debian12` is also supported |
 | `scenarios` | `["install"]` | JSON array. See [Scenarios](#scenarios) |
+| `update_distros` | `["rocky9"]` | JSON array of the `distros` the update scenario runs on. An entry missing from `distros` is ignored, and none left fails the run |
 | `update_from` | _(resolved)_ | Tag the update scenario starts from. Empty takes the newest non-prerelease release, then falls back to `latest` |
 | `ui_test_distro` | `rocky9` | Publish screenshots from this leg only |
 | `ui_test_scenario` | `install` | Publish screenshots from this scenario only |
@@ -88,8 +89,12 @@ Guest and runner sizing, all forwarded to `test-on-qemu.yml` unchanged:
 `vm_cpus`, `disk_size`, `timeout_minutes`. See
 [its own documentation](test-on-qemu.md#inputs) for what each one does.
 
-`distros` and `scenarios` multiply, so pass `scenarios: '["install","update"]'`
-only once the suite is ready for it: see [Scenarios](#scenarios) for why.
+Each leg takes one runner. `install` runs on every entry of `distros`, `update`
+only on those also in `update_distros`: the defaults give two install legs and,
+once `update` is enabled, one update leg on rocky9. Pass
+`update_distros: '["rocky9","debian13"]'` to upgrade on both, for four legs.
+Enable `scenarios: '["install","update"]'` only once the suite is ready for it:
+see [Scenarios](#scenarios) for why.
 
 ## Scenarios
 

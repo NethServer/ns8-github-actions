@@ -48,6 +48,11 @@ on:
         type: string
         default: '["install"]'
         description: "JSON array of scenarios. `install` tests the image on a clean node, `update` installs a baseline first and upgrades to it. Robot Framework does not error on an unused -v, so a suite that ignores $SCENARIO would silently run install twice under `update` rather than fail: opt in explicitly with `[\"install\",\"update\"]` once the suite handles it"
+      update_distros:
+        required: false
+        type: string
+        default: '["rocky9"]'
+        description: "JSON array of the `distros` the update scenario runs on. A migration seldom breaks on one distribution only, and each leg costs a runner"
       update_from:
         required: false
         type: string
@@ -122,6 +127,28 @@ jobs:
       head_sha: ${{ github.event.workflow_run.head_sha || github.sha }}
       head_branch: ${{ github.event.workflow_run.head_branch || github.ref_name }}
 
+  # distros and scenarios would otherwise multiply, running update on every distribution.
+  legs:
+    runs-on: ${{ inputs.runs_on }}
+    outputs:
+      include: ${{ steps.plan.outputs.include }}
+    steps:
+      - id: plan
+        env:
+          DISTROS: ${{ inputs.distros }}
+          SCENARIOS: ${{ inputs.scenarios }}
+          UPDATE_DISTROS: ${{ inputs.update_distros }}
+        run: |
+          set -euo pipefail
+          include=$(jq -cn --argjson d "${DISTROS}" --argjson s "${SCENARIOS}" --argjson u "${UPDATE_DISTROS}" '
+            [$d[] as $distro | $s[] as $scenario
+             | select($scenario != "update" or ($u | index($distro)))
+             | {distro: $distro, scenario: $scenario}]
+            | if ($s | index("update")) and (map(select(.scenario == "update")) | length) == 0
+              then error("update requested but no entry of update_distros is in distros") end')
+          echo "include=${include}" >> "${GITHUB_OUTPUT}"
+          echo "Legs: ${include}"
+
   # An app module is installed by its own suite, so the baseline it upgrades
   # from has to be named here rather than seeded by install.sh.
   baseline:
@@ -152,12 +179,13 @@ jobs:
           echo "Update scenario starts from ${IMAGE}:${tag}"
 
   test:
-    needs: [module, check_ui_tests_needed, baseline]
+    needs: [module, check_ui_tests_needed, legs, baseline]
     # baseline is legitimately skipped absent an update leg, but not failed:
     # that would reach robot as an empty -v UPDATE_FROM:.
     if: ${{ always()
             && needs.module.result == 'success'
             && needs.check_ui_tests_needed.result == 'success'
+            && needs.legs.result == 'success'
             && (needs.baseline.result == 'success' || needs.baseline.result == 'skipped') }}
     # github.ref is the default branch under workflow_run, so it cannot key this.
     concurrency:
@@ -172,8 +200,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: ${{ fromJSON(inputs.distros) }}
-        scenario: ${{ fromJSON(inputs.scenarios) }}
+        include: ${{ fromJSON(needs.legs.outputs.include) }}
     uses: ./.github/workflows/test-on-qemu.yml
     with:
       distro: ${{ matrix.distro }}

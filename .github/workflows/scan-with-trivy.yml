@@ -44,7 +44,7 @@ on:
 jobs:
   scan_ui_imageroot:
     name: "Scan module UI and imageroot"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -114,7 +114,7 @@ jobs:
 
   scan_images:
     name: "Scan images"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:

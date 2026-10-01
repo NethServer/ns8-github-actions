@@ -24,7 +24,7 @@ jobs:
 
   chooser:
     name: "Choose nodes"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       node_a: ${{ steps.pick.outputs.node_a }}
       node_b: ${{ steps.pick.outputs.node_b }}

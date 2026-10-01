@@ -311,7 +311,7 @@ jobs:
 
   ui_tests:
     needs: module
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       needed: ${{ steps.decide.outputs.needed }}
     steps:

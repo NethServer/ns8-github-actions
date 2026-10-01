@@ -34,7 +34,7 @@ on:
 jobs:
   detect_changes:
     name: "Detect changes"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       ui_tests_needed: ${{ steps.changes.outputs.ui_tests_needed }}
     steps:

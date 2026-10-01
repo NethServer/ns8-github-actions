@@ -77,6 +77,17 @@ set -e
 # Write the SSH private key to a temp file for use by Robot Framework tests
 echo "$ssh_key" > /tmp/idssh
 
+# PyPI is sometimes slow from a runner, and pip does not retry a download it already started.
+pip_install() {
+    local attempt
+    for attempt in 1 2 3; do
+        "${venvroot}/bin/pip3" install -q --timeout 60 "$@" && return 0
+        echo "pip install failed, attempt ${attempt} of 3" >&2
+        sleep 10
+    done
+    return 1
+}
+
 # Install the Python venv and Robot Framework dependencies if not already cached.
 # Cache is invalidated when the package list changes, ensuring that dependency
 # updates are always picked up even on reused (self-hosted) runners.
@@ -93,9 +104,9 @@ if [ ! -x "${venvroot}/bin/robot" ] || [ "${pythonreq_current_checksum}" != "${p
     fi
     python3 -mvenv "${venvroot}"
     # Install the Robot Framework packages
-    ${venvroot}/bin/pip3 install -q ${packages}
+    pip_install ${packages}
     # Install any module-specific Python requirements if present
-    [ -f "${module_pythonreq}" ] && ${venvroot}/bin/pip3 install -q -r "${module_pythonreq}"
+    [ -f "${module_pythonreq}" ] && pip_install -r "${module_pythonreq}"
     # Save the checksum so future runs can detect requirement changes
     echo "${pythonreq_current_checksum}" > "${pythonreq_checksum_file}"
     # Invalidate the rfbrowser sentinel so it is re-initialized with the new packages

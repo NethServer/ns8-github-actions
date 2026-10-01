@@ -354,9 +354,11 @@ jobs:
           ethernets:
             eth0:
               # Both distributions rename interfaces, so the MAC pinned on the
-              # QEMU command line is the only stable selector.
+              # QEMU command line is the only stable selector. Debian keeps its
+              # predictable name without set-name, and suites expect eth0.
               match:
                 macaddress: "${VM_MAC}"
+              set-name: eth0
               dhcp4: false
               dhcp6: false
               addresses:

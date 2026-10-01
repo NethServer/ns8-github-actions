@@ -146,6 +146,8 @@ jobs:
           echo "Legs: ${include}"
 
   test:
+    # Without a name GitHub lists the matrix values, and a bare true or false reads as nothing.
+    name: ${{ matrix.ui && needs.check_ui_tests_needed.outputs.ui_tests_needed == 'true' && 'tests and screenshots' || 'tests' }}
     needs: [module, check_ui_tests_needed, plan]
     if: ${{ always()
             && needs.module.result == 'success'

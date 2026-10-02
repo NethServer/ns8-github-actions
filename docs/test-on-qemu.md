@@ -184,7 +184,7 @@ the dev script, which then installs stable anyway.
 
 | Input | Default | |
 |---|---|---|
-| `image_url` | **required** | the module's container image, already published and reachable from the guest. Usually `needs.module.outputs.image` |
+| `image_url` | | the module's container image, already published and reachable from the guest. Usually `needs.module.outputs.image`. Left empty only to test `ns8-core`, see below |
 | `repo_ref` | `github.sha` | which commit of the caller to check out, for `tests/` and the test script |
 | `version_tag` | branch under test | names the artifact. `workflow_run` callers must pass it, their context points at the default branch |
 | `script` | `test-module.sh` | test entry point. Empty selects `scripts/test-module.sh` of this repository, and the module ships none |
@@ -194,6 +194,42 @@ the dev script, which then installs stable anyway.
 | `status_suffix` | | extra segment in the commit status name, after the distro. Keep it stable from one run to the next, or an old status stays on the commit |
 | `artifact_suffix` | | extra segment in the `test-outputs` artifact name and next to `guest` in the job summary. A caller matrixing on more than `distro` sets it, or two legs produce a same-named artifact and summaries that read identically |
 | `run_ui_tests` | `false` | reaches the script as `RUN_UI_TESTS`, and publishes the images of `tests/outputs/` on the pull request. See [Interface screenshots](#interface-screenshots) |
+
+### Testing ns8-core itself
+
+The suite of `ns8-core` installs the core and creates the cluster on its own,
+from `00__install.robot` and `30__create_cluster.robot`. The workflow must not
+do either first, and there is no module image to hand over.
+
+| Input | Default | |
+|---|---|---|
+| `setup_cluster` | `true` | `false` skips the core install and `create-cluster` |
+| `coremodules` | | space-separated images of the branch under test. They reach the suite as `COREMODULES`, which passes them to `install.sh` |
+
+With `image_url` empty, `scripts/test-module.sh` runs in core mode. The job
+summary then lists each core image with its digest. A module caller changes
+nothing: both inputs default to the old behaviour.
+
+```yaml
+  run_tests:
+    needs: ns8
+    permissions:
+      contents: read
+      statuses: write
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [rocky9, debian13]
+    uses: NethServer/ns8-github-actions/.github/workflows/test-on-qemu.yml@v1
+    with:
+      distro: ${{ matrix.distro }}
+      setup_cluster: false
+      path: core/
+      script: ""
+      coremodules: ${{ join(fromJSON(needs.ns8.outputs.modules), ' ') }}
+      # A private guest cannot get a Let's Encrypt certificate.
+      args: "--exclude letsencrypt"
+```
 
 ### The machine
 

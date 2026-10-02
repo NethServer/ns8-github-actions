@@ -576,12 +576,15 @@ jobs:
           fi
           set -e
           # Port 22 answers as soon as sshd starts, which is before cloud-init
-          # has written root's authorized_keys. Wait for the key, not the port.
+          # has written root's authorized_keys, and runcmd restarts sshd later.
+          # Retry only on ssh's own failure (255), not on a cloud-init error.
           for i in $(seq 1 30); do
-            ssh ns8 true 2>/dev/null && break
+            rc=0
+            ssh ns8 'cloud-init status --wait --long' || rc=$?
+            [ "${rc}" != "255" ] && break
             sleep 4
           done
-          ssh ns8 'cloud-init status --wait --long'
+          [ "${rc}" = "0" ] || exit "${rc}"
           ssh ns8 'systemctl is-system-running --wait || true'
           ssh ns8 'cat /etc/os-release | head -2; hostname -f; df -h /; free -m; ip -4 -o addr show'
           # Proves routing, NAT and DNS in one second, instead of discovering a

@@ -115,7 +115,7 @@ Three environments nested inside one another. Everything else follows from that.
 ```mermaid
 flowchart TB
   publish["Publish images"] -->|push| ghcr[("ghcr.io/&lt;owner&gt;/&lt;module&gt;:&lt;tag&gt;")]
-  subgraph runner["GitHub runner: ubuntu-24.04, throwaway VM"]
+  subgraph runner["GitHub runner: ubuntu-26.04, throwaway VM"]
     direction TB
     bridge["ns8br0 192.168.77.1/24<br/>MASQUERADE to the internet"]
     subgraph guest["QEMU/KVM guest 192.168.77.10"]

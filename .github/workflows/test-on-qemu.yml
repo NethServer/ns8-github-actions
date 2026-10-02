@@ -222,7 +222,7 @@ jobs:
       - name: Create the VM directory
         run: |
           set -euo pipefail
-          # /mnt on the current ubuntu-24.04 image is the root filesystem, which
+          # /mnt on the current ubuntu-26.04 image is the root filesystem, which
           # reports 87G free. The path is kept for runner images that do give
           # /mnt its own larger disk.
           sudo mkdir -p "${VM_DIR}"
@@ -232,7 +232,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils skopeo
-          # Ubuntu 24.04 confines unprivileged user namespaces by default, which
+          # Ubuntu 26.04 confines unprivileged user namespaces by default, which
           # rootless podman needs.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 

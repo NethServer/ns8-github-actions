@@ -165,7 +165,7 @@ The virtual machine the node runs on. Nothing to do with containers.
 
 | Input | Default | |
 |---|---|---|
-| `distro` | `rocky9` | `rocky9`, `debian12` or `debian13`. `bookworm` and `trixie` are accepted as aliases |
+| `distro` | `rocky9` | `rocky9` or `debian13`. `trixie` is accepted as an alias |
 | `cloud_image_url` | | a qcow2 URL, overriding the one `distro` implies. `distro` tracks `.latest`, so pinning a point release goes here: `.../Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2`. Also how to boot an image this workflow does not name at all |
 
 ### The NS8 core

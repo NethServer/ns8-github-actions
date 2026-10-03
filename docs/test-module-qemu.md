@@ -78,7 +78,7 @@ What to cover:
 
 | Input | Default | Description |
 |---|---|---|
-| `distros` | `["rocky9","debian13"]` | JSON array of guest distributions. `debian12` is also supported |
+| `distros` | `["rocky9","debian13"]` | JSON array of guest distributions |
 | `scenarios` | `["install","update"]` | JSON array. See [Scenarios](#scenarios) |
 
 Guest and runner sizing, all forwarded to `test-on-qemu.yml` unchanged:

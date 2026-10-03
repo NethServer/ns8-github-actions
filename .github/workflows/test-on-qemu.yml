@@ -17,7 +17,7 @@ on:
         required: false
         type: string
         default: rocky9
-        description: "Guest distribution: rocky9, debian12 (bookworm) or debian13 (trixie)"
+        description: "Guest distribution: rocky9 or debian13 (trixie)"
       cloud_image_url:
         required: false
         type: string
@@ -200,10 +200,8 @@ jobs:
                 url="https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2" ;;
               debian13|trixie)
                 url="https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2" ;;
-              debian12|bookworm)
-                url="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2" ;;
               *)
-                echo "::error::unknown distro '${{ inputs.distro }}', expected rocky9, debian12 or debian13"
+                echo "::error::unknown distro '${{ inputs.distro }}', expected rocky9 or debian13"
                 exit 1 ;;
             esac
           fi

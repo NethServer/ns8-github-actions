@@ -34,9 +34,20 @@ on:
         default: ""
         description: "Arguments for that install.sh. A core image here replaces the ns8-stable it hardcodes; anything else is a module to install alongside"
       image_url:
-        required: true
+        required: false
         type: string
-        description: "Module image to test, published and reachable from the guest"
+        default: ""
+        description: "Module image to test, published and reachable from the guest. Empty tests ns8-core itself, whose suite installs the core with `coremodules`"
+      coremodules:
+        required: false
+        type: string
+        default: ""
+        description: "Space-separated core images the suite hands to install.sh, reaching it as COREMODULES. Only for ns8-core, whose suite installs the core itself"
+      setup_cluster:
+        required: false
+        type: boolean
+        default: true
+        description: "Install the core and create the cluster before the suite. ns8-core sets it to false, since its suite does both"
       args:
         required: false
         type: string
@@ -301,9 +312,57 @@ jobs:
           IMAGE_URL: ${{ inputs.image_url }}
           DISTRO: ${{ inputs.distro }}
           ARTIFACT_SUFFIX: ${{ inputs.artifact_suffix }}
+          COREMODULES: ${{ inputs.coremodules }}
+          SETUP_CLUSTER: ${{ inputs.setup_cluster }}
         run: |
           set -uo pipefail
+          # Both would otherwise fail much later, and far from the cause.
+          if [ -z "${IMAGE_URL}" ] && [ -z "${COREMODULES}" ]; then
+            echo "::error::set image_url to test a module, or coremodules to test ns8-core"
+            exit 1
+          fi
+          if [ -n "${IMAGE_URL}" ] && [ "${SETUP_CLUSTER}" != "true" ]; then
+            echo "::error::a module suite expects a cluster: setup_cluster: false is only for ns8-core"
+            exit 1
+          fi
+          if [ -z "${IMAGE_URL}" ] && [ "${SETUP_CLUSTER}" = "true" ]; then
+            echo "::error::the ns8-core suite installs the core itself: set setup_cluster: false"
+            exit 1
+          fi
           echo "IMAGE_URL=${IMAGE_URL}" >> "${GITHUB_ENV}"
+          # Through env, not spliced in: a value with shell syntax would run.
+          guest="${DISTRO}"
+          artifact_name_suffix=""
+          if [ -n "${ARTIFACT_SUFFIX}" ]; then
+            guest="${guest} (${ARTIFACT_SUFFIX})"
+            artifact_name_suffix="-${ARTIFACT_SUFFIX}"
+          fi
+          echo "ARTIFACT_NAME_SUFFIX=${artifact_name_suffix}" >> "${GITHUB_ENV}"
+
+          if [ -z "${IMAGE_URL}" ]; then
+            # ns8-core: every image the suite hands to install.sh is under test.
+            {
+              echo "### Core images"
+              echo
+              echo "| image | digest |"
+              echo "|---|---|"
+            } >> "${GITHUB_STEP_SUMMARY}"
+            for image in ${COREMODULES}; do
+              if ! raw=$(skopeo inspect "docker://${image}" 2>&1); then
+                echo "::error::cannot resolve ${image}"
+                echo "${raw}"
+                exit 1
+              fi
+              digest=$(printf '%s' "${raw}" | jq -r '.Digest // empty')
+              echo "| \`${image}\` | \`${digest:-unresolved}\` |" >> "${GITHUB_STEP_SUMMARY}"
+            done
+            {
+              echo
+              echo "Guest: ${guest}"
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
           # A tag can be repushed, a digest cannot, so the summary carries both:
           # it has to say exactly which artifact the suite ran against.
           #
@@ -318,13 +377,6 @@ jobs:
             exit 1
           fi
           digest=$(printf '%s' "${raw}" | jq -r '.Digest // empty')
-          # Through env, not spliced in: a value with shell syntax would run.
-          guest="${DISTRO}"
-          artifact_name_suffix=""
-          if [ -n "${ARTIFACT_SUFFIX}" ]; then
-            guest="${guest} (${ARTIFACT_SUFFIX})"
-            artifact_name_suffix="-${ARTIFACT_SUFFIX}"
-          fi
           {
             echo "### Module image"
             echo
@@ -335,7 +387,6 @@ jobs:
             echo "| guest | ${guest} |"
           } >> "${GITHUB_STEP_SUMMARY}"
           echo "IMAGE_DIGEST=${digest}" >> "${GITHUB_ENV}"
-          echo "ARTIFACT_NAME_SUFFIX=${artifact_name_suffix}" >> "${GITHUB_ENV}"
 
       - name: Build the cloud-init seed
         run: |
@@ -418,6 +469,13 @@ jobs:
                     systemctl disable --now systemd-resolved
                     rm -f /etc/resolv.conf
                     printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
+                fi
+                # The image boots once under another machine-id and leaves a runtime
+                # journal behind. The core would then point promtail at
+                # /run/log/journal, where nothing new arrives.
+                if [ -d "/var/log/journal/\$(cat /etc/machine-id)" ]; then
+                    journalctl --flush
+                    rm -rf /run/log/journal/*
                 fi
                 # Debian names the unit ssh.service, Rocky sshd.service.
                 systemctl restart ssh 2>/dev/null || systemctl restart sshd
@@ -598,6 +656,7 @@ jobs:
                  -i /keys/ns8ci root@${VM_IP} 'echo CONTAINER_TO_VM_SSH_OK; hostname -f'"
 
       - name: Install the NS8 core
+        if: inputs.setup_cluster
         env:
           # corebranch picks which install.sh is downloaded; the script still
           # hardcodes ns8-stable as the core image, so testing another one means
@@ -612,6 +671,7 @@ jobs:
             bash install.sh ${INSTALL_ARGS}"
 
       - name: Initialise the cluster
+        if: inputs.setup_cluster
         run: |
           set -euo pipefail
           # 10.5.4.0/24 overlaps neither the bridge nor the 10.0.2.0/24 that
@@ -626,6 +686,7 @@ jobs:
         env:
           RUN_UI_TESTS: ${{ inputs.run_ui_tests }}
           ARGS: ${{ inputs.args }}
+          COREMODULES: ${{ inputs.coremodules }}
         run: |
           set -o pipefail
           if [ -n "${{ inputs.script }}" ]; then
@@ -633,17 +694,23 @@ jobs:
           else
             script_path="${{ github.workspace }}/.ci-actions/scripts/test-module.sh"
           fi
+          # An empty IMAGE_URL would still count as an argument, and the
+          # script reads its second argument as the image unless it is a robot option.
+          target=("${VM_IP}")
+          [ -n "${IMAGE_URL}" ] && target+=("${IMAGE_URL}")
           # ARGS stays unquoted: it carries several words that robot parses itself.
-          bash "$script_path" "${VM_IP}" "${IMAGE_URL}" ${ARGS}
+          bash "$script_path" "${target[@]}" ${ARGS}
 
       - name: Collect diagnostics
         if: always()
+        env:
+          COREMODULES: ${{ inputs.coremodules }}
         run: |
           set +e
           mkdir -p "${MODULE_DIR}/tests/outputs/diag"
           cd "${MODULE_DIR}/tests/outputs/diag"
           cp "${VM_DIR}/console.log" qemu-console.log
-          { echo "image tested: ${IMAGE_URL}";
+          { echo "image tested: ${IMAGE_URL:-${COREMODULES}}";
             echo "digest: ${IMAGE_DIGEST:-unresolved}";
             ssh ns8 'podman images --digests --format "{{.Repository}}:{{.Tag}} {{.Digest}}"';
             ssh ns8 'api-cli run list-installed-modules'; }  > module-version.txt

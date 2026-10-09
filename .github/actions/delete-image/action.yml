@@ -8,9 +8,12 @@ runs:
   using: composite
   steps:
     - shell: bash
+      env:
+        REF: ${{ github.event.ref }}
       run: |
         # Deleting images for ${{ github.event.ref }}
-        ref=$(basename ${{ github.event.ref }})
+        # Image tags have "/" replaced by "-", as publish-branch does
+        ref=${REF//\//-}
         gh auth login --with-token <<<"${{ inputs.delete_image_token }}"
         for image in ${{ inputs.images }} ; do
           versions_path="${{ github.event.organization.url || github.event.repository.owner.url }}/packages/container/${image}/versions"

@@ -17,9 +17,17 @@ runs:
         gh auth login --with-token <<<"${{ inputs.delete_image_token }}"
         for image in ${{ inputs.images }} ; do
           versions_path="${{ github.event.organization.url || github.event.repository.owner.url }}/packages/container/${image}/versions"
-          version_id=$(gh api --paginate -q ".[] | select(.metadata.container.tags == [\"${ref}\"]) | .id" ${versions_path})
-          if [[ -n ${version_id} ]]; then
+          # Select versions tagged only with the branch name, or with the
+          # branch name followed by a commit hash (e.g. "branch-1a2b3c4")
+          version_ids=$(gh api --paginate "${versions_path}" | jq -r --arg ref "${ref}" '
+            .[]
+            | select(.metadata.container.tags | length > 0)
+            | select(all(.metadata.container.tags[];
+                . == $ref
+                or (startswith($ref + "-") and (.[($ref | length) + 1:] | test("^[0-9a-f]{7,40}$")))))
+            | .id')
+          for version_id in ${version_ids}; do
             gh api --input /dev/null -X DELETE ${versions_path}/${version_id}
             echo "::notice::DELETE ${versions_path}/${version_id}"
-          fi
+          done
         done

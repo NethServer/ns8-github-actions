@@ -100,6 +100,8 @@ jobs:
     uses: ./.github/workflows/module-info.yml
 
   check_ui_tests_needed:
+    # Inherits the skip of module when the publish failed, so nothing runs.
+    needs: module
     uses: ./.github/workflows/check-ui-tests-needed.yml
     with:
       ui_tests_strategy: ${{ inputs.ui_tests_strategy }}

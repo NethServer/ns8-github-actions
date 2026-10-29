@@ -300,22 +300,44 @@ cases are tagged `ui`, and the shared runner excludes them unless
 slim Python one.
 
 `run_ui_tests` sets that variable. Once the suite is over, every image found
-under `tests/outputs/` is posted as a comment on the pull request of the ref
+under `tests/outputs/` is shown in a comment on the pull request of the ref
 under test:
 
 ```
 ### Interface of `rocky9`
 
+Commit 0e6bf6d…, [run 40122298808](...).
+
 **1. Status**
-![1._Status.png](...)
+![1-1._Status.png](https://raw.githubusercontent.com/...)
 ```
 
 The file name becomes the caption, underscores turned into spaces, so name the
 files in the order you want them read: `1._Status.png`, `2._Settings.png`.
 
-GitHub has no public API to attach an image to a comment, so the step uses
-[`cml`](https://cml.dev), which uploads the files and rewrites the Markdown
-links.
+GitHub has no public API to attach an image to a comment. A `screenshots` job,
+separate from the leg, pushes the images to the `ci-screenshots` branch of the
+caller repository and links them from the comment. The images used to go
+through [`cml`](https://cml.dev), whose public image host stopped accepting
+uploads in October 2026.
+
+- **One comment per pull request.** A hidden marker finds it, and every run
+  edits it in place.
+- **One commit on the branch.** Every run replaces the branch with a single
+  commit without parents, holding `pr-<number>/<distro>/` for each pull request
+  plus a `README.md`. The branch never grows a history, and superseded images
+  become unreachable. A push from another pull request in between makes the run
+  start over from the new tree, so no folder is lost.
+- **90 days after closing.** Every run removes the folders of pull requests
+  closed more than 90 days earlier. Their comments then show broken images.
+- **Public repositories only.** The links point at `raw.githubusercontent.com`.
+- **No loop.** A push made with the job token starts no workflow, so the branch
+  does not trigger `Publish images`.
+
+It needs `contents: write` and `pull-requests: write` on the calling job. The
+legs check out without keeping the token in `.git/config`, so the suite never
+sees it. Without `contents: write` the comment links the run artifacts instead,
+and the screenshots job turns red without failing the run.
 
 ### The caller, with screenshots
 
@@ -368,10 +390,10 @@ jobs:
 
   test:
     needs: [module, ui_tests]
-    # The comment is written with the job token, and a called workflow cannot
-    # hold more than its caller
+    # The images branch and the comment are written with the job token, and a
+    # called workflow cannot hold more than its caller
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
       statuses: write
     strategy:

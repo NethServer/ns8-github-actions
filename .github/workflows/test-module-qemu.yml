@@ -159,12 +159,10 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref }}-${{ matrix.distro }}-${{ matrix.key }}
       cancel-in-progress: true
-    # Granted here because test-on-qemu.yml, called below, cannot hold more
-    # than this job does.
-    permissions:
-      contents: read
-      pull-requests: write
-      statuses: write
+    # No permissions block: test-on-qemu.yml, called below, cannot hold more
+    # than this job does, and its screenshots job needs the contents: write
+    # that the module grants. A block here could only narrow that, and asking
+    # for more than the caller grants fails the whole run.
     strategy:
       fail-fast: false
       matrix:

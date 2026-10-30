@@ -853,11 +853,14 @@ jobs:
 
           # The names end up in URLs: keep them to characters that need no
           # escaping. The counter keeps two images with the same name apart.
+          # raw.githubusercontent.com caches for five minutes whatever the
+          # query string, so the content hash gives a changed image a new URL.
           names=() blobs=()
           for f in "${shots[@]}"; do
             base=$(basename "${f}")
-            names+=("$(( ${#names[@]} + 1 ))-$(printf '%s' "${base}" | tr -c 'A-Za-z0-9._-' '_')")
-            blobs+=("$(git hash-object -w "${f}")")
+            blob=$(git hash-object -w "${f}")
+            blobs+=("${blob}")
+            names+=("$(( ${#names[@]} + 1 ))-${blob:0:8}-$(printf '%s' "${base}" | tr -c 'A-Za-z0-9._-' '_')")
           done
           readme=$(printf '%s\n' \
             "Screenshots taken by the UI tests of the pull requests of ${GITHUB_REPOSITORY}." \
@@ -926,9 +929,7 @@ jobs:
                 name=$(basename "${shots[$i]%.*}")
                 echo "**${name//_/ }**"
                 echo
-                # The run ID changes the URL, so that GitHub's image proxy does
-                # not serve the copy it cached for an earlier run.
-                echo "![${names[$i]}](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/${dir}/${names[$i]}?run=${GITHUB_RUN_ID})"
+                echo "![${names[$i]}](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/${dir}/${names[$i]})"
                 echo
               done
             else

@@ -309,7 +309,7 @@ under test:
 Commit 0e6bf6d…, [run 40122298808](...).
 
 **1. Status**
-![1-1._Status.png](https://raw.githubusercontent.com/...)
+![1-3f9a2c1b-1._Status.png](https://raw.githubusercontent.com/...)
 ```
 
 The file name becomes the caption, underscores turned into spaces, so name the
@@ -331,6 +331,9 @@ uploads in October 2026.
 - **90 days after closing.** Every run removes the folders of pull requests
   closed more than 90 days earlier. Their comments then show broken images.
 - **Public repositories only.** The links point at `raw.githubusercontent.com`.
+- **A changed image gets a new name.** Each file name carries the start of its
+  content hash, since `raw.githubusercontent.com` caches a path for five
+  minutes whatever its query string.
 - **No loop.** A push made with the job token starts no workflow, so the branch
   does not trigger `Publish images`.
 

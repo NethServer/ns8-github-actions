@@ -920,7 +920,7 @@ jobs:
           marker='<!-- ns8-github-actions:screenshots -->'
           {
             echo "${marker}"
-            echo "### Interface of \`${DISTRO}\`"
+            echo "### UI of \`${DISTRO}\`"
             echo
             echo "Commit ${TESTED_SHA}, [run ${GITHUB_RUN_ID}](${run_url})."
             echo

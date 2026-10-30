@@ -304,7 +304,7 @@ under `tests/outputs/` is shown in a comment on the pull request of the ref
 under test:
 
 ```
-### Interface of `rocky9`
+### UI of `rocky9`
 
 Commit 0e6bf6d…, [run 40122298808](...).
 

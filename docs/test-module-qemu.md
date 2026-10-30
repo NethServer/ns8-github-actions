@@ -29,7 +29,7 @@ changes.
    run:
      name: "Run tests"
 +    permissions:
-+      contents: read
++      contents: write
 +      pull-requests: write
 +      statuses: write
 -    uses: NethServer/ns8-github-actions/.github/workflows/test-module.yml@v1
@@ -152,20 +152,26 @@ does not list it. Each leg therefore sets a commit status on the tested commit,
 then success, failure or error. The pull request shows one line per leg,
 linked to the run. That needs `statuses: write`.
 
-The screenshots are uploaded by `cml` and posted as a comment, which needs
-`pull-requests: write`.
+The screenshots are pushed to the `ci-screenshots` branch of the module
+repository, which needs `contents: write`, and linked from a comment, which
+needs `pull-requests: write`. See
+[Interface screenshots](test-on-qemu.md#interface-screenshots).
 
 A called workflow cannot hold more than its caller, so the module's own job
-grants both:
+grants all three:
 
 ```yaml
 jobs:
   run:
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
       statuses: write
 ```
+
+`contents: write` reaches only the job that publishes the screenshots. The
+legs check out the module without keeping the token in `.git/config`, so the
+suite and the code it runs never see it.
 
 A NethServer module caller can skip this block when its repository default
 workflow permission is `write`, since every job then already holds it. That
@@ -175,7 +181,9 @@ Granting it on the one job that needs it is narrower, and it is why this
 wrapper asks for the four lines instead of asking you to change a repository
 setting.
 
-Without the grant the job still passes: both steps are skipped rather than failing.
+Without the grant the run still passes. The status steps fail without
+stopping the leg. With `contents: read` the screenshots job turns red, and the
+comment links the run artifacts instead of showing the images.
 
 ## What a suite may rely on
 

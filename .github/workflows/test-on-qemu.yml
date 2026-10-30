@@ -122,7 +122,7 @@ on:
         required: false
         type: boolean
         default: false
-        description: "Reaches the test script as RUN_UI_TESTS, and publishes the images of tests/outputs as a comment on the pull request. Callers running a matrix should set it on one leg only, or every leg comments"
+        description: "Reaches the test script as RUN_UI_TESTS, and publishes the images of tests/outputs as a comment on the pull request, through the ci-screenshots branch of the caller repository. Callers running a matrix should set it on one leg only, or every leg comments"
 
 jobs:
   test-module:
@@ -130,6 +130,9 @@ jobs:
     name: ${{ inputs.artifact_suffix }} ${{ inputs.distro }}
     runs-on: ${{ inputs.runs_on }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
 
     env:
       VM_IP: 192.168.77.10
@@ -142,13 +145,17 @@ jobs:
       MODULE_DIR: ${{ github.workspace }}/${{ inputs.path }}
 
     steps:
+      # The suite runs code of the ref under test, and the job token may be
+      # allowed to push: keep it out of .git/config.
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.repo_ref }}
+          persist-credentials: false
 
       # Under workflow_run the run is attached to the default branch, so the pull
       # request never shows it. A commit status on the tested commit does.
       - name: Mark the tested commit as pending
+        id: commit
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -160,6 +167,7 @@ jobs:
           set -euo pipefail
           # repo_ref may be a branch name, and the statuses API wants a SHA.
           sha=$(git rev-parse HEAD)
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
           leg="${DISTRO}${STATUS_SUFFIX:+-${STATUS_SUFFIX}}"
           {
             echo "STATUS_SHA=${sha}"
@@ -178,6 +186,7 @@ jobs:
           repository: NethServer/ns8-github-actions
           ref: ${{ inputs.ci_actions_ref }}
           path: .ci-actions
+          persist-credentials: false
 
       - name: Derive the version tag
         env:
@@ -732,6 +741,7 @@ jobs:
           true
 
       - name: Upload test outputs
+        id: upload
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -739,64 +749,6 @@ jobs:
           path: ${{ github.workspace }}/${{ inputs.path }}/tests/outputs
           if-no-files-found: warn
           retention-days: 14
-
-      # GitHub has no public API to attach an image to a comment. cml uploads the
-      # local files and rewrites the Markdown links, so the images render inline.
-      # The token needs pull-requests: write, which a called workflow cannot ask
-      # for: the caller grants it, and this step is skipped rather than failing
-      # when it did not.
-      - name: Publish the screenshots on the pull request
-        if: ${{ always() && inputs.run_ui_tests }}
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO_TOKEN: ${{ github.token }}
-          OUTPUT_DIR: ${{ github.workspace }}/${{ inputs.path }}/tests/outputs
-          # Branch names come from whoever opens the pull request, so never inline them.
-          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}
-        run: |
-          set -euo pipefail
-          # workflow_run carries no pull request context: look the number up
-          pr_number="${{ github.event.pull_request.number }}"
-          if [ -z "$pr_number" ]; then
-            branch="${HEAD_BRANCH}"
-            pr_number=$(gh pr list --repo "${{ github.repository }}" --head "$branch" \
-                          --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-          fi
-          if [ -z "$pr_number" ]; then
-            echo "No open pull request for this ref: nothing to comment"
-            exit 0
-          fi
-
-          mapfile -d '' shots < <(find "${OUTPUT_DIR}" -type f \
-            \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) \
-            -print0 2>/dev/null | sort -z)
-          if [ ${#shots[@]} -eq 0 ]; then
-            echo "No image under ${OUTPUT_DIR}: nothing to comment"
-            exit 0
-          fi
-
-          npm install --location=global @dvcorg/cml
-          {
-            echo "### Interface of \`${{ inputs.distro }}\`"
-            echo
-            mkdir -p shots
-            n=0
-            for f in "${shots[@]}"; do
-              name=$(basename "${f%.*}")
-              # cml only uploads links it can parse, and a space ends a Markdown link.
-              # The counter keeps two images with the same name apart.
-              n=$((n + 1))
-              link="shots/${n}-$(basename "${f// /_}")"
-              cp "$f" "$link"
-              echo "**${name//_/ }**"
-              echo
-              echo "![$(basename "$link")](${link})"
-              echo
-            done
-          } > comment.md
-          cml comment create --target=pr/$pr_number \
-            --repo="https://github.com/${{ github.repository }}" comment.md
 
       - name: Debug shell
         if: ${{ steps.suite.outcome == 'failure' && inputs.debug_shell }}
@@ -835,3 +787,172 @@ jobs:
       - name: Fail the job if the suite failed
         if: ${{ steps.suite.outcome == 'failure' }}
         run: exit 1
+
+  # GitHub has no public API to attach an image to a comment, so the images go
+  # to the ci-screenshots branch of the caller repository and the comment links
+  # them. Pushing there needs contents: write, and pull-requests: write for the
+  # comment: a called workflow cannot ask for either, so the caller grants them.
+  # A job of its own, so that the token able to push never sits next to the
+  # suite, which runs code of the ref under test.
+  screenshots:
+    name: screenshots
+    needs: test-module
+    if: ${{ always() && inputs.run_ui_tests && needs.test-module.outputs.artifact_id != '' }}
+    runs-on: ubuntu-26.04
+    # Each run rewrites the comment, so a newer run of the same ref wins.
+    concurrency:
+      group: ${{ github.workflow }}-screenshots-${{ github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}
+      cancel-in-progress: true
+    # The images never fail the run, but a failure here still shows on the job.
+    continue-on-error: true
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.test-module.outputs.artifact_id }}
+          path: outputs
+
+      - name: Publish the screenshots on the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISTRO: ${{ inputs.distro }}
+          TESTED_SHA: ${{ needs.test-module.outputs.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Branch names come from whoever opens the pull request, so never inline them.
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}
+          BRANCH: ci-screenshots
+          RETENTION_DAYS: 90
+        run: |
+          set -euo pipefail
+          # workflow_run carries no pull request context: look the number up
+          if [ -z "${PR_NUMBER}" ]; then
+            PR_NUMBER=$(gh pr list --repo "${GITHUB_REPOSITORY}" --head "${HEAD_BRANCH}" \
+                          --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          fi
+          if [ -z "${PR_NUMBER}" ]; then
+            echo "No open pull request for this ref: nothing to comment"
+            exit 0
+          fi
+
+          mapfile -d '' shots < <(find "${PWD}/outputs" -type f \
+            \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) \
+            -print0 2>/dev/null | sort -z)
+          if [ ${#shots[@]} -eq 0 ]; then
+            echo "No image in the test outputs: nothing to comment"
+            exit 0
+          fi
+
+          git init -q "${RUNNER_TEMP}/branch"
+          cd "${RUNNER_TEMP}/branch"
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="${GIT_AUTHOR_NAME}" GIT_COMMITTER_EMAIL="${GIT_AUTHOR_EMAIL}"
+          auth=$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)
+          echo "::add-mask::${auth}"
+          git config "http.${GITHUB_SERVER_URL}/.extraheader" "AUTHORIZATION: basic ${auth}"
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+
+          # The names end up in URLs: keep them to characters that need no
+          # escaping. The counter keeps two images with the same name apart.
+          # raw.githubusercontent.com caches for five minutes whatever the
+          # query string, so the content hash gives a changed image a new URL.
+          names=() blobs=()
+          for f in "${shots[@]}"; do
+            base=$(basename "${f}")
+            blob=$(git hash-object -w "${f}")
+            blobs+=("${blob}")
+            names+=("$(( ${#names[@]} + 1 ))-${blob:0:8}-$(printf '%s' "${base}" | tr -c 'A-Za-z0-9._-' '_')")
+          done
+          readme=$(printf '%s\n' \
+            "Screenshots taken by the UI tests of the pull requests of ${GITHUB_REPOSITORY}." \
+            "" \
+            "NethServer/ns8-github-actions rewrites this branch as a single commit on" \
+            "every run, so do not push to it. The folder of a pull request is removed" \
+            "${RETENTION_DAYS} days after the pull request is closed." \
+            | git hash-object -w --stdin)
+
+          # Every run replaces the branch with one commit without parents, so it
+          # never grows a history: superseded images become unreachable and
+          # GitHub collects them. Each run starts from the tree it replaces, so
+          # the folders of other pull requests stay. The lease turns a push from
+          # another pull request in between into a retry, not a lost folder.
+          dir="pr-${PR_NUMBER}/${DISTRO}"
+          cutoff=$(date -u -d "${RETENTION_DAYS} days ago" +%s)
+          published=false denied=false
+          for attempt in 1 2 3 4 5; do
+            old=""
+            if git fetch -q --depth 1 origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" 2>/dev/null; then
+              old=$(git rev-parse "refs/remotes/origin/${BRANCH}")
+              git read-tree "${old}"
+            else
+              git read-tree --empty
+            fi
+            for n in $(git ls-files | sed -n 's|^pr-\([0-9][0-9]*\)/.*|\1|p' | sort -un); do
+              [ "${n}" = "${PR_NUMBER}" ] && continue
+              # Kept when the lookup fails: better a stale folder than a lost one.
+              closed=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${n}" --jq '.closed_at // ""') || continue
+              if [ -n "${closed}" ] && [ "$(date -u -d "${closed}" +%s)" -lt "${cutoff}" ]; then
+                echo "Removing pr-${n}: closed on ${closed}"
+                git rm -rq --cached "pr-${n}"
+              fi
+            done
+            git rm -rq --cached --ignore-unmatch "${dir}"
+            for i in "${!names[@]}"; do
+              git update-index --add --cacheinfo "100644,${blobs[$i]},${dir}/${names[$i]}"
+            done
+            git update-index --add --cacheinfo "100644,${readme},README.md"
+            commit=$(git commit-tree "$(git write-tree)" \
+                       -m "Screenshots of #${PR_NUMBER} on ${DISTRO}, run ${GITHUB_RUN_ID}")
+            # An empty lease means the branch must not exist yet.
+            if out=$(git push --force-with-lease="refs/heads/${BRANCH}:${old}" \
+                       origin "${commit}:refs/heads/${BRANCH}" 2>&1); then
+              published=true
+              break
+            fi
+            echo "${out}"
+            if grep -qE 'error: 403|denied to' <<<"${out}"; then
+              denied=true
+              break
+            fi
+            sleep $(( RANDOM % 10 + 5 ))
+          done
+
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          marker='<!-- ns8-github-actions:screenshots -->'
+          {
+            echo "${marker}"
+            echo "### UI of \`${DISTRO}\`"
+            echo
+            echo "Commit ${TESTED_SHA}, [run ${GITHUB_RUN_ID}](${run_url})."
+            echo
+            if [ "${published}" = true ]; then
+              for i in "${!names[@]}"; do
+                name=$(basename "${shots[$i]%.*}")
+                echo "**${name//_/ }**"
+                echo
+                echo "![${names[$i]}](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/${dir}/${names[$i]})"
+                echo
+              done
+            else
+              echo "The images could not be published: download them from the [run artifacts](${run_url}#artifacts)."
+            fi
+          } > "${RUNNER_TEMP}/comment.md"
+
+          # One comment per pull request, edited by every run.
+          id=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+                 --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"${marker}\"))) | .id" \
+               | sed -n 1p)
+          if [ -n "${id}" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" \
+              -F body=@"${RUNNER_TEMP}/comment.md" > /dev/null
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              -F body=@"${RUNNER_TEMP}/comment.md" > /dev/null
+          fi
+
+          if [ "${denied}" = true ]; then
+            echo "::warning::Cannot push to ${BRANCH}: the job calling this workflow must grant contents: write"
+            exit 1
+          elif [ "${published}" = false ]; then
+            echo "::warning::Cannot push to ${BRANCH} after ${attempt} attempts"
+            exit 1
+          fi

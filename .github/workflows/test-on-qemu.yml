@@ -896,8 +896,14 @@ jobs:
           # between into a retry, not a lost folder.
           dir="pr-${PR_NUMBER}/${DISTRO}"
           cutoff=$(date -u -d "${RETENTION_DAYS} days ago" +%s)
-          published=false refused=""
-          for attempt in 1 2 3 4 5; do
+          published=false refused="" attempts="1 2 3 4 5"
+          # raw.githubusercontent.com serves the files of a private repository
+          # to nobody, so its comment would show only broken images.
+          if [ "$(gh api "repos/${GITHUB_REPOSITORY}" --jq .private 2>/dev/null)" = true ]; then
+            refused="Not published: a private repository cannot show its images in a comment"
+            attempts=""
+          fi
+          for attempt in ${attempts}; do
             old=""
             if git fetch -q --depth 1 origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" 2>/dev/null; then
               old=$(git rev-parse "refs/remotes/origin/${BRANCH}")
@@ -930,10 +936,10 @@ jobs:
             echo "${out}"
             # Waiting would not change these.
             if grep -qE 'error: 403|denied to' <<<"${out}"; then
-              refused="the job calling this workflow must grant contents: write"
+              refused="Cannot push to ${BRANCH}: the job calling this workflow must grant contents: write"
               break
             elif grep -q 'GH013' <<<"${out}"; then
-              refused="a repository rule blocks it"
+              refused="Cannot push to ${BRANCH}: a repository rule blocks it"
               break
             fi
             sleep $(( RANDOM % 10 + 5 ))
@@ -950,8 +956,9 @@ jobs:
             if [ "${published}" = true ]; then
               for i in "${!names[@]}"; do
                 name=$(basename "${shots[$i]%.*}")
-                echo "**${name//_/ }**"
-                echo
+                # Markdown from a file name could mention people or inject HTML.
+                caption=$(printf '%s' "${name//_/ }" | tr -cd 'A-Za-z0-9 .,-')
+                [ -n "${caption}" ] && printf '**%s**\n\n' "${caption}"
                 echo "![${names[$i]}](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/${dir}/${names[$i]})"
                 echo
               done
@@ -975,8 +982,8 @@ jobs:
           if [ "${published}" = true ]; then
             report success "Screenshots published: ${#names[@]}"
           elif [ -n "${refused}" ]; then
-            echo "::warning::Cannot push to ${BRANCH}: ${refused}"
-            report failure "Cannot push to ${BRANCH}: ${refused}"
+            echo "::warning::${refused}"
+            report failure "${refused}"
             exit 1
           else
             echo "::warning::Cannot push to ${BRANCH} after ${attempt} attempts"

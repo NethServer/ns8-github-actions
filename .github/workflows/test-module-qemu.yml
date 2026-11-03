@@ -93,14 +93,20 @@ on:
         required: false
         description: "Unused. Left from the removed DigitalOcean workflow, so that a caller still passing it keeps working"
 
+# The caller grants contents: write for the screenshots job of test-on-qemu.yml.
+# The jobs before it read the code of the pull request, so they keep read only.
 jobs:
   module:
+    permissions:
+      contents: read
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == '' }}
     uses: ./.github/workflows/module-info.yml
 
   check_ui_tests_needed:
     # Inherits the skip of module when the publish failed, so nothing runs.
     needs: module
+    permissions:
+      contents: read
     uses: ./.github/workflows/check-ui-tests-needed.yml
     with:
       ui_tests_strategy: ${{ inputs.ui_tests_strategy }}
@@ -109,6 +115,8 @@ jobs:
 
   plan:
     needs: module
+    permissions:
+      contents: read
     runs-on: ${{ inputs.runs_on }}
     outputs:
       include: ${{ steps.plan.outputs.include }}

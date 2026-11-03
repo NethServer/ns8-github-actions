@@ -53,7 +53,7 @@ jobs:
 
 That file is the whole of it. The suite runs in a slim Python image, the cases
 tagged `ui` are excluded, and nothing is posted on the pull request. See
-[Interface screenshots](#interface-screenshots) to turn them on.
+[UI screenshots](#ui-screenshots) to turn them on.
 
 `script` is left out, so the module's own `test-module.sh` is used. Pass
 `script: ""` instead and the shared runner of this repository takes over: the
@@ -192,7 +192,7 @@ the dev script, which then installs stable anyway.
 | `args` | | extra arguments forwarded to robot, such as `-v SCENARIO:update` |
 | `status_suffix` | | extra segment in the commit status name, after the distro. Keep it stable from one run to the next, or an old status stays on the commit |
 | `artifact_suffix` | | extra segment in the `test-outputs` artifact name and next to `guest` in the job summary. A caller matrixing on more than `distro` sets it, or two legs produce a same-named artifact and summaries that read identically |
-| `run_ui_tests` | `false` | reaches the script as `RUN_UI_TESTS`, and publishes the images of `tests/outputs/` on the pull request. See [Interface screenshots](#interface-screenshots) |
+| `run_ui_tests` | `false` | reaches the script as `RUN_UI_TESTS`, and publishes the images of `tests/outputs/` on the pull request. See [UI screenshots](#ui-screenshots) |
 
 ### Testing ns8-core itself
 
@@ -291,7 +291,7 @@ test-outputs-rocky9-update-feat-8678
 `diag/module-version.txt` inside it records the image URL, the digests podman
 resolved on the node, and `list-installed-modules`.
 
-## Interface screenshots
+## UI screenshots
 
 A suite can drive a browser against `cluster-admin` and save what it sees. Those
 cases are tagged `ui`, and the shared runner excludes them unless

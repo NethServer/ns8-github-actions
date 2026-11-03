@@ -152,7 +152,7 @@ linked to the run. That needs `statuses: write`.
 The screenshots are pushed to the `ci-screenshots` branch of the module
 repository, which needs `contents: write`, and linked from a comment, which
 needs `pull-requests: write`. See
-[Interface screenshots](test-on-qemu.md#interface-screenshots).
+[UI screenshots](test-on-qemu.md#ui-screenshots).
 
 A called workflow cannot hold more than its caller, so the module's own job
 grants all three:

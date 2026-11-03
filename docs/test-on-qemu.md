@@ -64,9 +64,8 @@ declare one that covers the calling run.
 
 Under `workflow_run` the default context points at the default branch, not at
 the branch being tested, hence `repo_ref` and `version_tag`. Two further
-consequences are inherent to that trigger and apply to the upstream DigitalOcean
-workflow just the same: GitHub runs the definition from the default branch, and
-the run raises no check on a pull request. A fork's publish workflow runs in the
+consequences are inherent to that trigger: GitHub runs the definition from the
+default branch, and the run raises no check on a pull request. A fork's publish workflow runs in the
 fork, so the chain runs and reports there.
 
 ### Everything else you can set

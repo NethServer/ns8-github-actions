@@ -1,9 +1,8 @@
 name: "Setup an NS8 node on QEMU and test a module"
 
-# Self-contained alternative to test-on-digitalocean-infra.yml, which needs the
-# Nethesis DigitalOcean account, its NS8-CI project and the ci.nethserver.net
-# domain. This one boots a cloud image under KVM on the runner itself, so it
-# works on any repository, including a fork and a pull request from a fork.
+# Boots a cloud image under KVM on the runner itself, so it needs no outside
+# infrastructure and works on any repository, including a fork and a pull
+# request from a fork.
 #
 # The cloud-init files are written inline rather than read from this repository:
 # a reusable workflow is handed no context telling it which ref it was called

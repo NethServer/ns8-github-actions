@@ -1,7 +1,6 @@
 name: "Test module on QEMU"
 
-# Drop-in replacement for test-module.yml,
-# on a throwaway QEMU node instead of a DigitalOcean droplet. See docs/test-module-qemu.md.
+# What a module calls to test itself on throwaway QEMU nodes. See docs/test-module-qemu.md.
 
 on:
   workflow_call:
@@ -92,7 +91,7 @@ on:
     secrets:
       do_token:
         required: false
-        description: "Unused. Declared so a caller moving off the DigitalOcean wrapper keeps working without editing its secrets block"
+        description: "Unused. Left from the removed DigitalOcean workflow, so that a caller still passing it keeps working"
 
 jobs:
   module:

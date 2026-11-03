@@ -829,7 +829,7 @@ jobs:
           # Branch names come from whoever opens the pull request, so never inline them.
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}
           BRANCH: ci-screenshots
-          RETENTION_DAYS: 90
+          RETENTION_DAYS: 30
         run: |
           set -euo pipefail
           # Read by the next step, which reports it on the tested commit.

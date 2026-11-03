@@ -328,8 +328,8 @@ uploads in October 2026.
   plus a `README.md`. The branch never grows a history, and superseded images
   become unreachable. A push from another pull request in between makes the run
   start over from the new tree, so no folder is lost.
-- **90 days after closing.** Every run removes the folders of pull requests
-  closed more than 90 days earlier. Their comments then show broken images.
+- **30 days after closing.** Every run removes the folders of pull requests
+  closed more than 30 days earlier. Their comments then show broken images.
 - **Public repositories only.** The links point at `raw.githubusercontent.com`,
   which serves no file of a private repository: there the comment links the
   run artifacts instead, and the status turns red.

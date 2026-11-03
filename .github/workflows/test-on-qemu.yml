@@ -129,6 +129,12 @@ jobs:
     name: ${{ inputs.artifact_suffix }} ${{ inputs.distro }}
     runs-on: ${{ inputs.runs_on }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
+    # The suite runs code of the ref under test, so this job never holds the
+    # contents: write that the screenshots job needs. Asking for statuses: write
+    # here makes a caller that does not grant it fail at startup.
+    permissions:
+      contents: read
+      statuses: write
     outputs:
       sha: ${{ steps.commit.outputs.sha }}
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
@@ -144,8 +150,7 @@ jobs:
       MODULE_DIR: ${{ github.workspace }}/${{ inputs.path }}
 
     steps:
-      # The suite runs code of the ref under test, and the job token may be
-      # allowed to push: keep it out of .git/config.
+      # The suite runs code of the ref under test: keep the token out of .git/config.
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.repo_ref }}
@@ -790,13 +795,15 @@ jobs:
   # GitHub has no public API to attach an image to a comment, so the images go
   # to the ci-screenshots branch of the caller repository and the comment links
   # them. Pushing there needs contents: write, and pull-requests: write for the
-  # comment: a called workflow cannot ask for either, so the caller grants them.
+  # comment: a called workflow cannot ask for more than its caller grants.
   # A job of its own, so that the token able to push never sits next to the
   # suite, which runs code of the ref under test.
   screenshots:
     name: screenshots
     needs: test-module
-    if: ${{ always() && inputs.run_ui_tests && needs.test-module.outputs.artifact_id != '' }}
+    # Not after a cancellation: a newer run of the ref replaces this one, and
+    # would find its comment showing the images of a suite cut short.
+    if: ${{ !cancelled() && inputs.run_ui_tests && needs.test-module.outputs.sha != '' }}
     runs-on: ubuntu-26.04
     # Each run rewrites the comment, so a newer run of the same ref wins.
     concurrency:
@@ -805,12 +812,15 @@ jobs:
     # The images never fail the run, but a failure here still shows on the job.
     continue-on-error: true
     steps:
+      # Without an id it would download every artifact of the run.
       - uses: actions/download-artifact@v8
+        if: ${{ needs.test-module.outputs.artifact_id != '' }}
         with:
           artifact-ids: ${{ needs.test-module.outputs.artifact_id }}
           path: outputs
 
       - name: Publish the screenshots on the pull request
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           DISTRO: ${{ inputs.distro }}
@@ -822,13 +832,22 @@ jobs:
           RETENTION_DAYS: 90
         run: |
           set -euo pipefail
+          # Read by the next step, which reports it on the tested commit.
+          report() { printf 'state=%s\ndescription=%s\n' "$1" "$2" >> "${GITHUB_OUTPUT}"; }
+
           # workflow_run carries no pull request context: look the number up
+          # from the tested commit. A branch name alone also matches the pull
+          # requests of forks that happen to use the same name.
           if [ -z "${PR_NUMBER}" ]; then
-            PR_NUMBER=$(gh pr list --repo "${GITHUB_REPOSITORY}" --head "${HEAD_BRANCH}" \
-                          --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+            PR_NUMBER=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TESTED_SHA}/pulls" \
+                          --jq '[.[] | select(.state == "open"
+                                    and (.head.repo.full_name | ascii_downcase) == (env.GITHUB_REPOSITORY | ascii_downcase)
+                                    and .head.ref == env.HEAD_BRANCH)][0].number // empty' \
+                          2>/dev/null || echo "")
           fi
           if [ -z "${PR_NUMBER}" ]; then
             echo "No open pull request for this ref: nothing to comment"
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
@@ -836,8 +855,9 @@ jobs:
             \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) \
             -print0 2>/dev/null | sort -z)
           if [ ${#shots[@]} -eq 0 ]; then
-            echo "No image in the test outputs: nothing to comment"
-            exit 0
+            echo "::warning::The UI tests ran, but the test outputs hold no image"
+            report failure "The UI tests saved no image"
+            exit 1
           fi
 
           git init -q "${RUNNER_TEMP}/branch"
@@ -870,13 +890,13 @@ jobs:
             | git hash-object -w --stdin)
 
           # Every run replaces the branch with one commit without parents, so it
-          # never grows a history: superseded images become unreachable and
-          # GitHub collects them. Each run starts from the tree it replaces, so
-          # the folders of other pull requests stay. The lease turns a push from
-          # another pull request in between into a retry, not a lost folder.
+          # never grows a history: superseded images become unreachable. Each
+          # run starts from the tree it replaces, so the folders of other pull
+          # requests stay. The lease turns a push from another pull request in
+          # between into a retry, not a lost folder.
           dir="pr-${PR_NUMBER}/${DISTRO}"
           cutoff=$(date -u -d "${RETENTION_DAYS} days ago" +%s)
-          published=false denied=false
+          published=false refused=""
           for attempt in 1 2 3 4 5; do
             old=""
             if git fetch -q --depth 1 origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" 2>/dev/null; then
@@ -900,7 +920,7 @@ jobs:
             done
             git update-index --add --cacheinfo "100644,${readme},README.md"
             commit=$(git commit-tree "$(git write-tree)" \
-                       -m "Screenshots of #${PR_NUMBER} on ${DISTRO}, run ${GITHUB_RUN_ID}")
+                       -m "Screenshots of pull request ${PR_NUMBER} on ${DISTRO}, run ${GITHUB_RUN_ID}")
             # An empty lease means the branch must not exist yet.
             if out=$(git push --force-with-lease="refs/heads/${BRANCH}:${old}" \
                        origin "${commit}:refs/heads/${BRANCH}" 2>&1); then
@@ -908,8 +928,12 @@ jobs:
               break
             fi
             echo "${out}"
+            # Waiting would not change these.
             if grep -qE 'error: 403|denied to' <<<"${out}"; then
-              denied=true
+              refused="the job calling this workflow must grant contents: write"
+              break
+            elif grep -q 'GH013' <<<"${out}"; then
+              refused="a repository rule blocks it"
               break
             fi
             sleep $(( RANDOM % 10 + 5 ))
@@ -948,10 +972,33 @@ jobs:
               -F body=@"${RUNNER_TEMP}/comment.md" > /dev/null
           fi
 
-          if [ "${denied}" = true ]; then
-            echo "::warning::Cannot push to ${BRANCH}: the job calling this workflow must grant contents: write"
+          if [ "${published}" = true ]; then
+            report success "Screenshots published: ${#names[@]}"
+          elif [ -n "${refused}" ]; then
+            echo "::warning::Cannot push to ${BRANCH}: ${refused}"
+            report failure "Cannot push to ${BRANCH}: ${refused}"
             exit 1
-          elif [ "${published}" = false ]; then
+          else
             echo "::warning::Cannot push to ${BRANCH} after ${attempt} attempts"
+            report error "Cannot push to ${BRANCH} after ${attempt} attempts"
             exit 1
           fi
+
+      # Shows on the pull request whether the images made it, without failing
+      # the run. Skipped with no pull request to show them on.
+      - name: Report the screenshots on the tested commit
+        if: ${{ !cancelled() && steps.publish.outputs.skip != 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTED_SHA: ${{ needs.test-module.outputs.sha }}
+          STATE: ${{ steps.publish.outputs.state }}
+          DESCRIPTION: ${{ steps.publish.outputs.description }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # No state means the publish step stopped somewhere unexpected.
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${TESTED_SHA}" \
+            -f state="${STATE:-error}" -f context=continuous-integration/qemu/screenshots \
+            -f description="${DESCRIPTION:-Cannot publish the screenshots, see the run}" \
+            -f target_url="${RUN_URL}" > /dev/null

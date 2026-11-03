@@ -336,10 +336,17 @@ uploads in October 2026.
 - **No loop.** A push made with the job token starts no workflow, so the branch
   does not trigger `Publish images`.
 
+A commit status, `continuous-integration/qemu/screenshots`, tells on the pull
+request whether the images were published, and why not: no `contents: write`,
+a repository rule blocking the push, no image in the test outputs, or a push
+that kept losing to other pull requests. It never fails the run. A cancelled
+run, or a ref with no open pull request, sets no status.
+
 It needs `contents: write` and `pull-requests: write` on the calling job. The
-legs check out without keeping the token in `.git/config`, so the suite never
-sees it. Without `contents: write` the comment links the run artifacts instead,
-and the screenshots job turns red without failing the run.
+legs, which run the suite, narrow their own token to `contents: read` and
+`statuses: write`, so only the screenshots job can push. Without
+`contents: write` the comment links the run artifacts instead, and the
+screenshots job and its status turn red without failing the run.
 
 ### The caller, with screenshots
 
@@ -433,7 +440,8 @@ Each leg sets a commit status on the tested commit, named
 It is pending while the leg runs, then success or failure from the suite, or
 error when the node never got as far as the suite. Under `workflow_run` this is
 the only trace of the test on the pull request. It needs `statuses: write` on
-the calling job, and is skipped without it.
+the calling job, which the legs ask for: a caller that does not grant it fails
+at startup.
 
 ## When it fails
 

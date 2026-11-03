@@ -151,7 +151,8 @@ linked to the run. That needs `statuses: write`.
 
 The screenshots are pushed to the `ci-screenshots` branch of the module
 repository, which needs `contents: write`, and linked from a comment, which
-needs `pull-requests: write`. See
+needs `pull-requests: write`. One more status,
+`continuous-integration/qemu/screenshots`, says whether they made it. See
 [UI screenshots](test-on-qemu.md#ui-screenshots).
 
 A called workflow cannot hold more than its caller, so the module's own job
@@ -167,8 +168,8 @@ jobs:
 ```
 
 `contents: write` reaches only the job that publishes the screenshots. The
-legs check out the module without keeping the token in `.git/config`, so the
-suite and the code it runs never see it.
+legs, which run the suite and the code of the pull request, narrow their own
+token to `contents: read` and `statuses: write`.
 
 A NethServer module caller can skip this block when its repository default
 workflow permission is `write`, since every job then already holds it. That
@@ -178,9 +179,10 @@ Granting it on the one job that needs it is narrower, and it is why this
 wrapper asks for the four lines instead of asking you to change a repository
 setting.
 
-Without the grant the run still passes. The status steps fail without
-stopping the leg. With `contents: read` the screenshots job turns red, and the
-comment links the run artifacts instead of showing the images.
+`statuses: write` is required: without it the run fails at startup. With
+`contents: read` the run still passes, but the screenshots job and its status
+turn red, and the comment links the run artifacts instead of showing the
+images.
 
 ## What a suite may rely on
 

@@ -53,7 +53,7 @@ jobs:
 
 That file is the whole of it. The suite runs in a slim Python image, the cases
 tagged `ui` are excluded, and nothing is posted on the pull request. See
-[Interface screenshots](#interface-screenshots) to turn them on.
+[UI screenshots](#ui-screenshots) to turn them on.
 
 `script` is left out, so the module's own `test-module.sh` is used. Pass
 `script: ""` instead and the shared runner of this repository takes over: the
@@ -64,9 +64,8 @@ declare one that covers the calling run.
 
 Under `workflow_run` the default context points at the default branch, not at
 the branch being tested, hence `repo_ref` and `version_tag`. Two further
-consequences are inherent to that trigger and apply to the upstream DigitalOcean
-workflow just the same: GitHub runs the definition from the default branch, and
-the run raises no check on a pull request. A fork's publish workflow runs in the
+consequences are inherent to that trigger: GitHub runs the definition from the
+default branch, and the run raises no check on a pull request. A fork's publish workflow runs in the
 fork, so the chain runs and reports there.
 
 ### Everything else you can set
@@ -193,7 +192,7 @@ the dev script, which then installs stable anyway.
 | `args` | | extra arguments forwarded to robot, such as `-v SCENARIO:update` |
 | `status_suffix` | | extra segment in the commit status name, after the distro. Keep it stable from one run to the next, or an old status stays on the commit |
 | `artifact_suffix` | | extra segment in the `test-outputs` artifact name and next to `guest` in the job summary. A caller matrixing on more than `distro` sets it, or two legs produce a same-named artifact and summaries that read identically |
-| `run_ui_tests` | `false` | reaches the script as `RUN_UI_TESTS`, and publishes the images of `tests/outputs/` on the pull request. See [Interface screenshots](#interface-screenshots) |
+| `run_ui_tests` | `false` | reaches the script as `RUN_UI_TESTS`, and publishes the images of `tests/outputs/` on the pull request. See [UI screenshots](#ui-screenshots) |
 
 ### Testing ns8-core itself
 
@@ -292,7 +291,7 @@ test-outputs-rocky9-update-feat-8678
 `diag/module-version.txt` inside it records the image URL, the digests podman
 resolved on the node, and `list-installed-modules`.
 
-## Interface screenshots
+## UI screenshots
 
 A suite can drive a browser against `cluster-admin` and save what it sees. Those
 cases are tagged `ui`, and the shared runner excludes them unless
@@ -300,22 +299,57 @@ cases are tagged `ui`, and the shared runner excludes them unless
 slim Python one.
 
 `run_ui_tests` sets that variable. Once the suite is over, every image found
-under `tests/outputs/` is posted as a comment on the pull request of the ref
+under `tests/outputs/` is shown in a comment on the pull request of the ref
 under test:
 
 ```
-### Interface of `rocky9`
+### UI of `rocky9`
+
+Commit 0e6bf6d…, [run 40122298808](...).
 
 **1. Status**
-![1._Status.png](...)
+![1-3f9a2c1b-1._Status.png](https://raw.githubusercontent.com/...)
 ```
 
-The file name becomes the caption, underscores turned into spaces, so name the
-files in the order you want them read: `1._Status.png`, `2._Settings.png`.
+The file name becomes the caption, underscores turned into spaces and only
+letters, digits, spaces and `.,-` kept, so name the files in the order you want
+them read: `1._Status.png`, `2._Settings.png`.
 
-GitHub has no public API to attach an image to a comment, so the step uses
-[`cml`](https://cml.dev), which uploads the files and rewrites the Markdown
-links.
+GitHub has no public API to attach an image to a comment. A `screenshots` job,
+separate from the leg, pushes the images to the `ci-screenshots` branch of the
+caller repository and links them from the comment. The images used to go
+through [`cml`](https://cml.dev), whose public image host stopped accepting
+uploads in October 2026.
+
+- **One comment per pull request.** A hidden marker finds it, and every run
+  edits it in place.
+- **One commit on the branch.** Every run replaces the branch with a single
+  commit without parents, holding `pr-<number>/<distro>/` for each pull request
+  plus a `README.md`. The branch never grows a history, and superseded images
+  become unreachable. A push from another pull request in between makes the run
+  start over from the new tree, so no folder is lost.
+- **30 days after closing.** Every run removes the folders of pull requests
+  closed more than 30 days earlier. Their comments then show broken images.
+- **Public repositories only.** The links point at `raw.githubusercontent.com`,
+  which serves no file of a private repository: there the comment links the
+  run artifacts instead, and the status turns red.
+- **A changed image gets a new name.** Each file name carries the start of its
+  content hash, since `raw.githubusercontent.com` caches a path for five
+  minutes whatever its query string.
+- **No loop.** A push made with the job token starts no workflow, so the branch
+  does not trigger `Publish images`.
+
+A commit status, `continuous-integration/qemu/screenshots`, tells on the pull
+request whether the images were published, and why not: no `contents: write`,
+a repository rule blocking the push, no image in the test outputs, or a push
+that kept losing to other pull requests. It never fails the run. A cancelled
+run, or a ref with no open pull request, sets no status.
+
+It needs `contents: write` and `pull-requests: write` on the calling job. The
+legs, which run the suite, narrow their own token to `contents: read` and
+`statuses: write`, so only the screenshots job can push. Without
+`contents: write` the comment links the run artifacts instead, and the
+screenshots job and its status turn red without failing the run.
 
 ### The caller, with screenshots
 
@@ -368,10 +402,10 @@ jobs:
 
   test:
     needs: [module, ui_tests]
-    # The comment is written with the job token, and a called workflow cannot
-    # hold more than its caller
+    # The images branch and the comment are written with the job token, and a
+    # called workflow cannot hold more than its caller
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
       statuses: write
     strategy:
@@ -409,7 +443,8 @@ Each leg sets a commit status on the tested commit, named
 It is pending while the leg runs, then success or failure from the suite, or
 error when the node never got as far as the suite. Under `workflow_run` this is
 the only trace of the test on the pull request. It needs `statuses: write` on
-the calling job, and is skipped without it.
+the calling job, which the legs ask for: a caller that does not grant it fails
+at startup.
 
 ## When it fails
 

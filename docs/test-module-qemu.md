@@ -5,64 +5,61 @@ the UI tests are worth running, and fans out over distributions and scenarios, c
 [`test-on-qemu.yml`](test-on-qemu.md) once per leg. Call that one directly only
 when you need a single leg under your own conditions.
 
-Drop-in replacement for
-[`test-module.yml`](../.github/workflows/test-module.yml),
-running on a throwaway QEMU node instead of a DigitalOcean droplet. The name
-says QEMU rather than matching the file it replaces: both could end up in the
-same repository one day, and two `.github/workflows/test-module.yml` cannot.
-
-- [Moving a module off DigitalOcean](#moving-a-module-off-digitalocean)
+- [Calling it](#calling-it)
 - [Inputs](#inputs)
 - [Distros and runners](#distros-and-runners)
 - [Scenarios](#scenarios)
 - [The pull request status, comment and their token](#the-pull-request-status-comment-and-their-token)
 - [What a suite may rely on](#what-a-suite-may-rely-on)
 
-## Moving a module off DigitalOcean
+## Calling it
 
-Change the path in `uses:`, and drop the `secrets:` block. The secret is still
-accepted, and ignored, so a caller that keeps it works unchanged. Nothing else
-changes.
+The module's `.github/workflows/test-module.yml`:
 
-```diff
- jobs:
-   run:
-     name: "Run tests"
-+    permissions:
-+      contents: read
-+      pull-requests: write
-+      statuses: write
--    uses: NethServer/ns8-github-actions/.github/workflows/test-module.yml@v1
-+    uses: NethServer/ns8-github-actions/.github/workflows/test-module-qemu.yml@v1
-     with:
-       ui_tests_strategy: on_renovate_ui_change
-       debug_shell: ${{ github.event.inputs.debug_shell == 'true' }}
--    secrets:
--      do_token: ${{ secrets.do_token }}
+```yaml
+name: Test module
+run-name: "Test ${{ github.event.workflow_run.head_branch || github.ref_name }} on QEMU"
+
+on:
+  workflow_dispatch:
+    inputs:
+      debug_shell:
+        description: "Debug shell"
+        required: true
+        type: boolean
+  workflow_run:
+    workflows: ["Publish images"]
+    types: [completed]
+
+jobs:
+  run:
+    name: "Run tests"
+    permissions:
+      contents: write
+      pull-requests: write
+      statuses: write
+    uses: NethServer/ns8-github-actions/.github/workflows/test-module-qemu.yml@v1
+    with:
+      ui_tests_strategy: on_renovate_ui_change
+      debug_shell: ${{ github.event.inputs.debug_shell == 'true' }}
 ```
 
-The `permissions` block lets the wrapper report each leg on the pull request
+The `permissions` block lets the workflow report each leg on the pull request
 and post the screenshots as a comment. See
 [below](#the-pull-request-status-comment-and-their-token).
 
-Also worth adding at the top of the caller file, next to `name:`:
-
-```yaml
-run-name: "Test ${{ github.event.workflow_run.head_branch || github.ref_name }} on QEMU"
-```
-
-Under `workflow_run` every run belongs to the default branch, so the Actions
-list shows them all as the workflow name, with nothing saying what was tested.
-A called workflow cannot set its caller's `run-name`, so this line lives in the
-module.
+Under `workflow_run` every run belongs to the default branch, so without
+`run-name` the Actions list shows them all as the workflow name, with nothing
+saying what was tested. A called workflow cannot set its caller's `run-name`,
+so this line lives in the module.
 
 ## Inputs
 
-Identical to the Nethesis wrapper:
+When to run the UI tests, and how to debug a failure:
 
 | Input | Default | Description |
 |---|---|---|
-| `ui_tests_strategy` | `on_renovate_ui_change` | `always`, `on_ui_change`, `on_renovate_ui_change` or `never`. Evaluated by `check-ui-tests-needed.yml` of `ns8-github-actions`, so the vocabulary is the same on both CI |
+| `ui_tests_strategy` | `on_renovate_ui_change` | `always`, `on_ui_change`, `on_renovate_ui_change` or `never`. Evaluated by `check-ui-tests-needed.yml` |
 | `debug_shell` | `false` | Open a tmate shell when the suite fails |
 
 What the module under test is:
@@ -152,20 +149,27 @@ does not list it. Each leg therefore sets a commit status on the tested commit,
 then success, failure or error. The pull request shows one line per leg,
 linked to the run. That needs `statuses: write`.
 
-The screenshots are uploaded by `cml` and posted as a comment, which needs
-`pull-requests: write`.
+The screenshots are pushed to the `ci-screenshots` branch of the module
+repository, which needs `contents: write`, and linked from a comment, which
+needs `pull-requests: write`. One more status,
+`continuous-integration/qemu/screenshots`, says whether they made it. See
+[UI screenshots](test-on-qemu.md#ui-screenshots).
 
 A called workflow cannot hold more than its caller, so the module's own job
-grants both:
+grants all three:
 
 ```yaml
 jobs:
   run:
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
       statuses: write
 ```
+
+`contents: write` reaches only the job that publishes the screenshots. The
+legs, which run the suite and the code of the pull request, narrow their own
+token to `contents: read` and `statuses: write`.
 
 A NethServer module caller can skip this block when its repository default
 workflow permission is `write`, since every job then already holds it. That
@@ -175,11 +179,14 @@ Granting it on the one job that needs it is narrower, and it is why this
 wrapper asks for the four lines instead of asking you to change a repository
 setting.
 
-Without the grant the job still passes: both steps are skipped rather than failing.
+`statuses: write` is required: without it the run fails at startup. With
+`contents: read` the run still passes, but the screenshots job and its status
+turn red, and the comment links the run artifacts instead of showing the
+images.
 
 ## What a suite may rely on
 
-The same on both CI, because both run the same `scripts/test-module.sh`:
+Set by the shared `scripts/test-module.sh`:
 
 | | Value |
 |---|---|

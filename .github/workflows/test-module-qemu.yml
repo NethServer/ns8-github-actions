@@ -1,7 +1,6 @@
 name: "Test module on QEMU"
 
-# Drop-in replacement for test-module.yml,
-# on a throwaway QEMU node instead of a DigitalOcean droplet. See docs/test-module-qemu.md.
+# What a module calls to test itself on throwaway QEMU nodes. See docs/test-module-qemu.md.
 
 on:
   workflow_call:
@@ -92,16 +91,22 @@ on:
     secrets:
       do_token:
         required: false
-        description: "Unused. Declared so a caller moving off the DigitalOcean wrapper keeps working without editing its secrets block"
+        description: "Unused. Left from the removed DigitalOcean workflow, so that a caller still passing it keeps working"
 
+# The caller grants contents: write for the screenshots job of test-on-qemu.yml.
+# The jobs before it read the code of the pull request, so they keep read only.
 jobs:
   module:
+    permissions:
+      contents: read
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == '' }}
     uses: ./.github/workflows/module-info.yml
 
   check_ui_tests_needed:
     # Inherits the skip of module when the publish failed, so nothing runs.
     needs: module
+    permissions:
+      contents: read
     uses: ./.github/workflows/check-ui-tests-needed.yml
     with:
       ui_tests_strategy: ${{ inputs.ui_tests_strategy }}
@@ -110,6 +115,8 @@ jobs:
 
   plan:
     needs: module
+    permissions:
+      contents: read
     runs-on: ${{ inputs.runs_on }}
     outputs:
       include: ${{ steps.plan.outputs.include }}
@@ -159,12 +166,10 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref }}-${{ matrix.distro }}-${{ matrix.key }}
       cancel-in-progress: true
-    # Granted here because test-on-qemu.yml, called below, cannot hold more
-    # than this job does.
-    permissions:
-      contents: read
-      pull-requests: write
-      statuses: write
+    # No permissions block: test-on-qemu.yml, called below, cannot hold more
+    # than this job does, and its screenshots job needs the contents: write
+    # that the module grants. A block here could only narrow that, and asking
+    # for more than the caller grants fails the whole run.
     strategy:
       fail-fast: false
       matrix:

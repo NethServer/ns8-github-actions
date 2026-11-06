@@ -81,10 +81,14 @@ set -e
 echo "$ssh_key" > /tmp/idssh
 
 # PyPI is sometimes slow from a runner, and pip does not retry a download it already started.
+# A package that must be compiled fails the same way every time, because the container
+# has no C compiler: return 2 at once instead of retrying.
 pip_install() {
     local attempt
     for attempt in 1 2 3; do
-        "${venvroot}/bin/pip3" install -q --timeout 60 "$@" && return 0
+        "${venvroot}/bin/pip3" install -q --timeout 60 "$@" 2>&1 | tee /tmp/pip-install.log
+        [ "${PIPESTATUS[0]}" -eq 0 ] && return 0
+        grep -q 'Failed building wheel' /tmp/pip-install.log && return 2
         echo "pip install failed, attempt ${attempt} of 3" >&2
         sleep 10
     done
@@ -109,7 +113,18 @@ if [ ! -x "${venvroot}/bin/robot" ] || [ "${pythonreq_current_checksum}" != "${p
     # Install the Robot Framework packages
     pip_install ${packages}
     # Install any module-specific Python requirements if present
-    [ -f "${module_pythonreq}" ] && pip_install -r "${module_pythonreq}"
+    if [ -f "${module_pythonreq}" ]; then
+        # A pin of a package installed above replaces its latest version with an old one
+        if grep -q -i -E '^[[:space:]]*robotframework([-_]sshlibrary)?[[:space:]]*(==|<|~=)' "${module_pythonreq}"; then
+            echo "::warning::tests/pythonreq.txt pins robotframework or robotframework-sshlibrary, which the test runner already installs in their latest version. Remove those lines: https://github.com/NethServer/ns8-github-actions/blob/v1/docs/test-module-qemu.md#python-requirements"
+        fi
+        status=0
+        pip_install -r "${module_pythonreq}" || status=$?
+        if [ "${status}" -eq 2 ]; then
+            echo "::error::A package in tests/pythonreq.txt has no prebuilt wheel for $(python3 -V) and the test container has no C compiler to build it. Remove the lines the test runner already covers, and update the other pins: https://github.com/NethServer/ns8-github-actions/blob/v1/docs/test-module-qemu.md#python-requirements"
+        fi
+        [ "${status}" -eq 0 ] || exit 1
+    fi
     # Save the checksum so future runs can detect requirement changes
     echo "${pythonreq_current_checksum}" > "${pythonreq_checksum_file}"
     # Invalidate the rfbrowser sentinel so it is re-initialized with the new packages

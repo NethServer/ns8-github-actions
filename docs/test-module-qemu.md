@@ -199,3 +199,24 @@ Set by the shared `scripts/test-module.sh`:
 | UI gating | `[Tags] ui`, excluded by `--exclude ui` |
 | flaky gating | `[Tags] unstable`, tolerated by `--skiponfailure unstable` |
 | outputs | `tests/outputs/` in the module tree |
+
+## Python requirements
+
+The test runner installs `robotframework` and `robotframework-sshlibrary` in
+their latest version, and `robotframework-browser` when the UI tests run. The
+SSH library brings `paramiko`, `cryptography`, `bcrypt`, `pynacl` and `cffi`
+with it. A suite that needs nothing else ships no `tests/pythonreq.txt`.
+
+`tests/pythonreq.txt` is only for the extra Python libraries a suite imports,
+installed with `pip install -r` after the packages above. Do not list those
+packages there:
+
+- a pin such as `robotframework==4.1.2` replaces the latest version with an
+  old one, and the Browser library needs a newer one. The run warns about it;
+- an old pin such as `cffi==1.15.0` has no prebuilt wheel for the Python of
+  the test container, 3.11, or 3.12 with the UI tests. The container has no C
+  compiler, so the install fails and the suite never starts.
+
+Many modules created from the old module template still carry such a file.
+Delete it, or keep only the lines of the extra libraries, pinned to versions
+that publish wheels for those Python versions.

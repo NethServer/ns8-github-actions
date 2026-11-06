@@ -87,13 +87,14 @@ export PIP_TIMEOUT=60
 # A package that must be built from source fails the same way every time, because the
 # container has no C compiler: return 2 at once instead of retrying. pip reports any build
 # step failure as subprocess-exited-with-error, and so a failed download of the build
-# dependencies too: retry that one.
+# dependencies too: retry that one, unless a build dependency itself failed to compile.
 pip_install() {
     local attempt
     for attempt in 1 2 3; do
         "${venvroot}/bin/pip3" install -q "$@" 2>&1 | tee /tmp/pip-install.log
         [ "${PIPESTATUS[0]}" -eq 0 ] && return 0
-        if grep -q -E 'Failed building wheel|subprocess-exited-with-error' /tmp/pip-install.log &&
+        grep -q 'Failed building wheel' /tmp/pip-install.log && return 2
+        if grep -q 'subprocess-exited-with-error' /tmp/pip-install.log &&
             ! grep -q -i -E 'install(ing)? build dependencies' /tmp/pip-install.log; then
             return 2
         fi
@@ -135,6 +136,8 @@ if [ ! -x "${venvroot}/bin/robot" ] || [ "${pythonreq_current_checksum}" != "${p
             failed=$(grep -o -E "Failed (building wheel for [^ ]+|to build '[^']+')" /tmp/pip-install.log | sed -E "s/.* //; s/'//g" | sort -u | paste -sd' ')
             pyver=$("${venvroot}/bin/python3" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
             echo "::error::Cannot build ${failed:-a package} from source while installing tests/pythonreq.txt (Python ${pyver}, no C compiler in the test container). Remove the lines the test runner already covers, and update the other pins: https://github.com/NethServer/ns8-github-actions/blob/v1/docs/test-module-qemu.md#python-requirements"
+        elif [ "${status}" -ne 0 ]; then
+            echo "::error::Cannot install tests/pythonreq.txt: see the pip output above"
         fi
         [ "${status}" -eq 0 ] || exit 1
     fi

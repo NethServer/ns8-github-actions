@@ -81,14 +81,22 @@ set -e
 echo "$ssh_key" > /tmp/idssh
 
 # PyPI is sometimes slow from a runner, and pip does not retry a download it already started.
-# A package that must be compiled fails the same way every time, because the container
-# has no C compiler: return 2 at once instead of retrying.
+# The variable also reaches the pip subprocess that installs build dependencies, which
+# ignores the --timeout option.
+export PIP_TIMEOUT=60
+# A package that must be built from source fails the same way every time, because the
+# container has no C compiler: return 2 at once instead of retrying. pip reports any build
+# step failure as subprocess-exited-with-error, and so a failed download of the build
+# dependencies too: retry that one.
 pip_install() {
     local attempt
     for attempt in 1 2 3; do
-        "${venvroot}/bin/pip3" install -q --timeout 60 "$@" 2>&1 | tee /tmp/pip-install.log
+        "${venvroot}/bin/pip3" install -q "$@" 2>&1 | tee /tmp/pip-install.log
         [ "${PIPESTATUS[0]}" -eq 0 ] && return 0
-        grep -q 'Failed building wheel' /tmp/pip-install.log && return 2
+        if grep -q -E 'Failed building wheel|subprocess-exited-with-error' /tmp/pip-install.log &&
+            ! grep -q -i -E 'install(ing)? build dependencies' /tmp/pip-install.log; then
+            return 2
+        fi
         echo "pip install failed, attempt ${attempt} of 3" >&2
         sleep 10
     done
@@ -111,17 +119,22 @@ if [ ! -x "${venvroot}/bin/robot" ] || [ "${pythonreq_current_checksum}" != "${p
     fi
     python3 -mvenv "${venvroot}"
     # Install the Robot Framework packages
-    pip_install ${packages}
+    pip_install ${packages} || {
+        echo "::error::Cannot install the test runner packages: see the pip output above"
+        exit 1
+    }
     # Install any module-specific Python requirements if present
     if [ -f "${module_pythonreq}" ]; then
-        # A pin of a package installed above replaces its latest version with an old one
-        if grep -q -i -E '^[[:space:]]*robotframework([-_]sshlibrary)?[[:space:]]*(==|<|~=)' "${module_pythonreq}"; then
-            echo "::warning::tests/pythonreq.txt pins robotframework or robotframework-sshlibrary, which the test runner already installs in their latest version. Remove those lines: https://github.com/NethServer/ns8-github-actions/blob/v1/docs/test-module-qemu.md#python-requirements"
+        # A version pin or a URL of a package installed above replaces the runner's version
+        if grep -q -i -E '^[[:space:]]*robotframework([-_.](sshlibrary|browser))?[[:space:]]*(\[[^]]*\])?[[:space:]]*([=<>!~][^;#]*)?(==|~=|<|@)' "${module_pythonreq}"; then
+            echo "::warning::tests/pythonreq.txt pins robotframework, robotframework-sshlibrary or robotframework-browser, replacing the version installed by the test runner. Remove those lines: https://github.com/NethServer/ns8-github-actions/blob/v1/docs/test-module-qemu.md#python-requirements"
         fi
         status=0
         pip_install -r "${module_pythonreq}" || status=$?
         if [ "${status}" -eq 2 ]; then
-            echo "::error::A package in tests/pythonreq.txt has no prebuilt wheel for $(python3 -V) and the test container has no C compiler to build it. Remove the lines the test runner already covers, and update the other pins: https://github.com/NethServer/ns8-github-actions/blob/v1/docs/test-module-qemu.md#python-requirements"
+            failed=$(grep -o -E "Failed (building wheel for [^ ]+|to build '[^']+')" /tmp/pip-install.log | sed -E "s/.* //; s/'//g" | sort -u | paste -sd' ')
+            pyver=$("${venvroot}/bin/python3" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+            echo "::error::Cannot build ${failed:-a package} from source while installing tests/pythonreq.txt (Python ${pyver}, no C compiler in the test container). Remove the lines the test runner already covers, and update the other pins: https://github.com/NethServer/ns8-github-actions/blob/v1/docs/test-module-qemu.md#python-requirements"
         fi
         [ "${status}" -eq 0 ] || exit 1
     fi

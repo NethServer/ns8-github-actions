@@ -81,12 +81,25 @@ set -e
 echo "$ssh_key" > /tmp/idssh
 
 # PyPI is sometimes slow from a runner, and pip does not retry a download it already started.
+# The variable also reaches the pip subprocess that installs build dependencies, which
+# ignores the --timeout option.
+export PIP_TIMEOUT=60
+# A package that must be built from source fails the same way every time, because the
+# container has no C compiler: return 2 at once instead of retrying. pip reports any build
+# step failure as subprocess-exited-with-error, and so a failed download of the build or
+# backend dependencies too: retry that one, unless a dependency itself failed to compile.
 pip_install() {
     local attempt
     for attempt in 1 2 3; do
-        "${venvroot}/bin/pip3" install -q --timeout 60 "$@" && return 0
+        "${venvroot}/bin/pip3" install -q "$@" 2>&1 | tee /tmp/pip-install.log
+        [ "${PIPESTATUS[0]}" -eq 0 ] && return 0
+        grep -q 'Failed building wheel' /tmp/pip-install.log && return 2
+        if grep -q 'subprocess-exited-with-error' /tmp/pip-install.log &&
+            ! grep -q -i -E 'install(ing)? (build|backend) dependencies' /tmp/pip-install.log; then
+            return 2
+        fi
         echo "pip install failed, attempt ${attempt} of 3" >&2
-        sleep 10
+        [ "${attempt}" -lt 3 ] && sleep 10
     done
     return 1
 }
@@ -107,9 +120,27 @@ if [ ! -x "${venvroot}/bin/robot" ] || [ "${pythonreq_current_checksum}" != "${p
     fi
     python3 -mvenv "${venvroot}"
     # Install the Robot Framework packages
-    pip_install ${packages}
+    pip_install ${packages} || {
+        echo "::error::Cannot install the test runner packages: see the pip output above"
+        exit 1
+    }
     # Install any module-specific Python requirements if present
-    [ -f "${module_pythonreq}" ] && pip_install -r "${module_pythonreq}"
+    if [ -f "${module_pythonreq}" ]; then
+        # The runner installs these packages itself: a version pin or a URL can replace its version
+        if grep -q -i -E '^[[:space:]]*robotframework([-_.](sshlibrary|browser))?[[:space:]]*(\[[^]]*\])?[[:space:]]*([=<>!~][^;#]*)?(==|~=|<|@)' "${module_pythonreq}"; then
+            echo "::warning::tests/pythonreq.txt pins robotframework, robotframework-sshlibrary or robotframework-browser, which the test runner installs itself. Remove those lines: https://github.com/NethServer/ns8-github-actions/blob/v1/docs/test-module-qemu.md#python-requirements"
+        fi
+        status=0
+        pip_install -r "${module_pythonreq}" || status=$?
+        if [ "${status}" -eq 2 ]; then
+            failed=$(grep -o -E "Failed (building wheel for [^ ]+|to build '[^']+')" /tmp/pip-install.log | sed -E "s/.* //; s/'//g" | sort -u | paste -sd' ')
+            pyver=$("${venvroot}/bin/python3" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+            echo "::error::Cannot build ${failed:-a package} from source while installing tests/pythonreq.txt (Python ${pyver}, no C compiler in the test container). Remove the lines the test runner already covers, and update the other pins: https://github.com/NethServer/ns8-github-actions/blob/v1/docs/test-module-qemu.md#python-requirements"
+        elif [ "${status}" -ne 0 ]; then
+            echo "::error::Cannot install tests/pythonreq.txt: see the pip output above"
+        fi
+        [ "${status}" -eq 0 ] || exit 1
+    fi
     # Save the checksum so future runs can detect requirement changes
     echo "${pythonreq_current_checksum}" > "${pythonreq_checksum_file}"
     # Invalidate the rfbrowser sentinel so it is re-initialized with the new packages

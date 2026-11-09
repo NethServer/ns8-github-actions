@@ -11,6 +11,7 @@ when you need a single leg under your own conditions.
 - [Scenarios](#scenarios)
 - [The pull request status, comment and their token](#the-pull-request-status-comment-and-their-token)
 - [What a suite may rely on](#what-a-suite-may-rely-on)
+- [Python requirements](#python-requirements)
 
 ## Calling it
 
@@ -199,3 +200,27 @@ Set by the shared `scripts/test-module.sh`:
 | UI gating | `[Tags] ui`, excluded by `--exclude ui` |
 | flaky gating | `[Tags] unstable`, tolerated by `--skiponfailure unstable` |
 | outputs | `tests/outputs/` in the module tree |
+
+## Python requirements
+
+The test runner installs `robotframework` and `robotframework-sshlibrary` in
+their latest version, and, when the UI tests run, the `robotframework-browser`
+version matched to its Playwright image. They bring their own dependencies,
+such as `paramiko`, `scp`, `cryptography`, `bcrypt`, `pynacl`, `cffi` and
+`pycparser`. A suite that needs nothing else ships no `tests/pythonreq.txt`.
+
+`tests/pythonreq.txt` is only for the extra Python libraries a suite imports,
+installed with `pip install -r` after the packages above. Do not list those
+packages or their dependencies there:
+
+- a pin such as `robotframework==4.1.2` replaces the version installed by the
+  runner with an old one, and the Browser library needs a newer one. The run
+  warns when the file pins one of the three packages;
+- an old pin such as `cffi==1.15.0` has no prebuilt wheel for the Python of
+  the test container, 3.11, or 3.12 with the UI tests. The container has no C
+  compiler, so the install fails and the suite never starts.
+
+Many modules created from the old module template still carry such a file, and
+all its lines are of this kind: delete it. Otherwise keep only the lines of the
+extra libraries, pinned to versions that publish wheels for Python 3.11 and
+3.12, or that are pure Python.

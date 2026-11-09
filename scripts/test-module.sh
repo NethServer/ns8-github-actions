@@ -126,9 +126,9 @@ if [ ! -x "${venvroot}/bin/robot" ] || [ "${pythonreq_current_checksum}" != "${p
     }
     # Install any module-specific Python requirements if present
     if [ -f "${module_pythonreq}" ]; then
-        # A version pin or a URL of a package installed above replaces the runner's version
+        # The runner installs these packages itself: a version pin or a URL can replace its version
         if grep -q -i -E '^[[:space:]]*robotframework([-_.](sshlibrary|browser))?[[:space:]]*(\[[^]]*\])?[[:space:]]*([=<>!~][^;#]*)?(==|~=|<|@)' "${module_pythonreq}"; then
-            echo "::warning::tests/pythonreq.txt pins robotframework, robotframework-sshlibrary or robotframework-browser, replacing the version installed by the test runner. Remove those lines: https://github.com/NethServer/ns8-github-actions/blob/v1/docs/test-module-qemu.md#python-requirements"
+            echo "::warning::tests/pythonreq.txt pins robotframework, robotframework-sshlibrary or robotframework-browser, which the test runner installs itself. Remove those lines: https://github.com/NethServer/ns8-github-actions/blob/v1/docs/test-module-qemu.md#python-requirements"
         fi
         status=0
         pip_install -r "${module_pythonreq}" || status=$?

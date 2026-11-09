@@ -99,7 +99,7 @@ pip_install() {
             return 2
         fi
         echo "pip install failed, attempt ${attempt} of 3" >&2
-        sleep 10
+        [ "${attempt}" -lt 3 ] && sleep 10
     done
     return 1
 }

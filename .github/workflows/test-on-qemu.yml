@@ -679,7 +679,9 @@ jobs:
           set -euo pipefail
           # INSTALL_ARGS is left unquoted on purpose: install.sh iterates over
           # its positional arguments, so a space-separated list has to split.
+          # deb.debian.org sometimes resets a download: retry it instead of failing the whole job.
           ssh ns8 "set -e; cd /root; \
+            if [ -d /etc/apt/apt.conf.d ]; then echo 'Acquire::Retries \"5\";' > /etc/apt/apt.conf.d/80-ci-retries; fi; \
             curl -fsSL --retry 3 -O https://raw.githubusercontent.com/NethServer/ns8-core/${{ inputs.corebranch }}/core/install.sh; \
             bash install.sh ${INSTALL_ARGS}"
 

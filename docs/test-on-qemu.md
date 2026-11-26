@@ -99,7 +99,7 @@ lines carry prose, not keys: delete them rather than uncomment them.
       # status_suffix: ""              # extra segment in the commit status name, stable across runs
       # artifact_suffix: ""            # extra segment naming a leg beyond distro
       # --- the machine
-      # runs_on: ubuntu-24.04          # must provide /dev/kvm
+      # runs_on: ubuntu-26.04          # must provide /dev/kvm
       # vm_mem: 8192                   # guest memory, MiB. 12288 is the ceiling
       # vm_cpus: 4                     # guest vCPUs. The runner has 4
       # disk_size: 30G                 # guest disk after resize
@@ -234,7 +234,7 @@ nothing: both inputs default to the old behaviour.
 
 | Input | Default | |
 |---|---|---|
-| `runs_on` | `ubuntu-24.04` | must provide `/dev/kvm` |
+| `runs_on` | `ubuntu-26.04` | must provide `/dev/kvm` |
 | `vm_mem` | `8192` | guest memory, MiB. The runner has 15360 and uses about 1500, so 12288 is the practical ceiling |
 | `vm_cpus` | `4` | guest vCPUs. The runner has 4 |
 | `disk_size` | `30G` | guest disk after resize |
